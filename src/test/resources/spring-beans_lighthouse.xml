@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:jee="http://www.springframework.org/schema/jee" xmlns:aop="http://www.springframework.org/schema/aop"
+  xmlns:tx="http://www.springframework.org/schema/tx"
+  xsi:schemaLocation="
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.0.xsd
+http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee-2.0.xsd
+http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-2.0.xsd
+http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-2.0.xsd">
+
+  <!--  configuration files -->
+  <bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+    <property name="locations">
+      <list>
+        <value>testcase.properties</value>
+      </list>
+    </property>
+  </bean>
+
+
+  <!-- Lighthouse -->
+  <bean id="Lighthouse_configured" class="jp.co.fujisan.lighthouse.LightHouse">
+	<property name="configuration_path"><value>${lighthouse.config.path}</value></property>
+	<property name="storage_path"><value>${lighthouse.storage.path}</value></property>
+  </bean>
+  <bean id="Lighthouse_not_configured" class="jp.co.fujisan.lighthouse.LightHouse">
+	<property name="configuration_path"><value>${lighthouse.config.temp.path}</value></property>
+	<property name="storage_path"><value>${lighthouse.storage.temp.path}</value></property>
+  </bean>
+
+  <!-- GlobalLockServer -->
+  <bean id="GlobalLockServer" class="jp.co.fujisan.lighthouse.lock.GlobalLockServer">
+	<property name="host"><value>localhost</value></property>
+	<property name="port"><value>1234</value></property>
+  </bean>
+  <!-- GlobalLockClientManager -->
+  <bean id="GlobalLockClientManager" class="jp.co.fujisan.lighthouse.lock.GlobalLockClientManager">
+  </bean>
+ 
+</beans>

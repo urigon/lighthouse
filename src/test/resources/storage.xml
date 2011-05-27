@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<nodes>
+<version>1</version>
+<node type="tyrant">
+<name>tyrant_1</name>
+<weight>1</weight>
+<host ip="localhost" port="41201"/>
+<added>2010/04/20  16:26:59 JST</added>
+<created>2010/12/07  19:04:18 JST</created>
+<available>true</available>
+<id>453030029</id>
+</node>
+<node type="tyrant">
+<name>tyrant_2</name>
+<weight>1</weight>
+<host ip="localhost" port="44201"/>
+<added>2010/04/20  16:26:59 JST</added>
+<created>2010/12/07  19:04:18 JST</created>
+<available>true</available>
+<id>1171506775</id>
+</node>
+<node type="tyrant">
+<name>tyrant_3</name>
+<weight>1</weight>
+<host ip="localhost" port="51201"/>
+<added>2010/04/20  16:26:59 JST</added>
+<created>2010/12/07  19:04:18 JST</created>
+<available>true</available>
+<id>1242698194</id>
+</node>
+<node type="tyrant">
+<name>tyrant_4</name>
+<weight>1</weight>
+<host ip="localhost" port="54201"/>
+<added>2010/04/20  16:26:59 JST</added>
+<created>2010/12/07  19:04:19 JST</created>
+<available>true</available>
+<id>1819775416</id>
+</node>
+<nodes version="1"/>
+</nodes>

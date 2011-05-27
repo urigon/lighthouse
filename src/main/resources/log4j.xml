@@ -1,0 +1,52 @@
+<?xml version="1.0" ?>
+<!DOCTYPE log4j:configuration SYSTEM "log4j.dtd">
+<log4j:configuration xmlns:log4j='http://jakarta.apache.org/log4j/'>
+	<appender name="file" class="org.apache.log4j.FileAppender">
+		<param name="File" value="/var/log/lighthouse.web/logfile.log"/>
+		<param name="Append" value="true"/>
+		<layout class="org.apache.log4j.PatternLayout">
+			<param name="ConversionPattern" value="%d{yyyy-MM-dd[HH:mm:ss]},%p,%l,%m%n"/>
+		</layout>
+	</appender>
+	<appender name="rollingfile" class="org.apache.log4j.RollingFileAppender">
+		<param name="File" value="/var/log/lighthouse.web/rolling.log"/>
+		<param name="Append" value="true"/>
+		<param name="MaxFileSize" value="512KB"/>
+		<param name="maxBackupIndex" value="9"/>
+		<layout class="org.apache.log4j.PatternLayout">
+			<param name="ConversionPattern" value="%d{yyyy-MM-dd[HH:mm:ss]},%p,%l,%m%n"/>
+		</layout>
+	</appender>
+    <appender name="DAILYFILE" class="org.apache.log4j.DailyRollingFileAppender">
+    	<param name="file" value="/var/log/lighthouse.web/lighthouse.log"/>
+       	<param name="datePattern" value="'.'yyyy-MM-dd"/>
+       	<param name="append" value="true" />
+       	<layout class="org.apache.log4j.PatternLayout">
+        <param name="ConversionPattern" value="%d %-5p (%F:%L) - %m%n"/>
+       </layout>        
+    </appender>
+    <appender name="CONSOLE" class="org.apache.log4j.ConsoleAppender">
+    	<param name="Target" value="System.err"/>
+       <layout class="org.apache.log4j.PatternLayout">
+         <param name="ConversionPattern" value="%d %-5p [%t] %C{2} (%F:%L) - %m%n"/>
+       </layout>        
+    </appender>
+	<appender name="SMTP" class="org.apache.log4j.net.SMTPAppender">
+    	<param name="BufferSize" value="1" />
+	    <param name="To" value="error@localhost.com" />
+    	<param name="From" value="admin@localhost.com" />
+	    <param name="Subject" value="[LOCAL]mobile ERROR" />
+	    <param name="SMTPHost" value="127.0.0.1" />
+    	<layout class="org.apache.log4j.PatternLayout">
+			<param name="ConversionPattern" value="%d %-5p [%t] %C{2} (%F:%L) - %m%n"/>
+		</layout>
+  		</appender>
+  	<category name="jp.co.fujisan.lighthouse" additivity="true">
+        <priority value ="DEBUG" />
+        <appender-ref ref="file"/>
+    </category>
+    <root>
+        <priority value ="WARN"/>
+        <appender-ref ref="file" />
+    </root>
+</log4j:configuration>
