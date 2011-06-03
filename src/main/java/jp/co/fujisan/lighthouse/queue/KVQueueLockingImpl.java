@@ -37,10 +37,10 @@ public class KVQueueLockingImpl extends KVQueueBase implements QueueItemCommitte
 			return null;
 		}
 		
-		String key = item.key;
+		String key = item.getKey();
 		QueueItem prev_item = null;
 		try{
-			switch(item.command){
+			switch(item.getCommand()){
 			case QueueItem.CMD_CANCEL:
 				
 				//存在するエントリを削除　→　エンキューしない
