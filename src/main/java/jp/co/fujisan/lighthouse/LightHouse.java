@@ -55,9 +55,11 @@ import org.apache.commons.configuration.event.ConfigurationEvent;
 import org.apache.commons.configuration.event.ConfigurationListener;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.InitializingBean;
 
 
-public class LightHouse extends BeanAccessor implements KVS{
+public class LightHouse implements KVS, InitializingBean, DisposableBean{
 
 	private static final Log logger = LogFactory.getLog(LightHouse.class);
 
@@ -66,6 +68,27 @@ public class LightHouse extends BeanAccessor implements KVS{
 	private final static String META_DELIMITER = ":"; 
 	private final static String COMPRESSION_HEADER_PREFIX = "c="; 
 	
+	/*
+	 *  instances are held with ring_id;
+	 */
+	private static Map<String,LightHouse> instances = new HashMap<String,LightHouse>();
+	
+	public static LightHouse getInstance(String ringId){
+		return instances.get(ringId);
+	}
+	private static void setInstance(String ringId,LightHouse instance){
+		instances.put(ringId,instance);
+	}
+	
+	private static LightHouse removeInstance(String ringId){
+		if(ringId==null){
+			instances.clear();
+			return null;
+		}
+		return instances.remove(ringId);
+	}
+	
+
 	/**
 	 * Status that LightHouse cloud is stopping, means follow.</br>
 	 * - LightHouse instance is available.</br>
@@ -120,6 +143,8 @@ public class LightHouse extends BeanAccessor implements KVS{
     	return client_manager;
     }
 	
+    private Configurations configurations = null;
+    
     private HashRing m_ring = null;
     
     /*
@@ -139,60 +164,43 @@ public class LightHouse extends BeanAccessor implements KVS{
 	private GlobalLockClientManager lock_client = null;
 	
     //有効クライアント数によって増減するので、設定値と別の変数を確保
-    private int rt_replica_number = CONFIG_DEFAULT_REPLICA_NUMBER;
+    private int rt_replica_number = Configurations.CONFIG_DEFAULT_REPLICA_NUMBER;
     private ExecutorService  m_cmd_executor = null;
     private List<CommandTask> m_cmd_tasks = null;
     
     //有効クライアント数によって増減するので、設定値と別の変数を確保
-	private int rt_get_retry_number = CONFIG_DEFAULT_GET_RETRY_NUMBER;
+	private int rt_get_retry_number = Configurations.CONFIG_DEFAULT_GET_RETRY_NUMBER;
 
 	/*
 	 * 圧縮済みデータヘッダ
 	 * format c=$cfg_compression_type:
 	 */
-	private String rt_compression_header = COMPRESSION_HEADER_PREFIX+compression_type+META_DELIMITER;
+	private String rt_compression_header = COMPRESSION_HEADER_PREFIX+Configurations.CONFIG_DEFAULT_COMPRESSION_TYPE+META_DELIMITER;
 	
-	public static void main(String[] args) {
-    	
-        String ringId = null;
-        if (args.length > 0) {
-        	ringId = args[0];
-        }
-        String config_file_path = null;
-        if (args.length > 1) {
-        	config_file_path = args[1];
-        }
-        String storage_file_path = null;
-        if (args.length > 2) {
-        	storage_file_path = args[2];
-        }
-
-        logger.info("Starting LightHouse Server ...");
-        
-        try {
-        	LightHouse instance = LightHouse.getInstance(ringId);
-        	if(instance==null){
-            	instance = new LightHouse();
-        	}
-        	if(config_file_path!=null){
-        		instance.setConfiguration_path(config_file_path);
-        	}
-        	if(storage_file_path!=null){
-        		instance.setStorage_path(storage_file_path);
-        	}
-        	instance.setRing_id(ringId);
-        	instance.setup();
-        	instance.start();
-        } catch (Exception e) {
-            logger.error("Fatal Error -  LightHouse.init failed",e);
-        }
-    }
-
 	public LightHouse()throws Exception{
-		super();
-    	client_manager = new ClientManager();
+    	client_manager = new ClientManager(this);
     }
 
+	public void setConfigurations(Configurations configurations){
+		this.configurations = configurations;
+	}
+	public Configurations getConfiguraions(){
+		return this.configurations;
+	}
+	
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		this.setup();
+	}
+	@Override
+	public void destroy() throws Exception {
+		LightHouse lightHouse = removeInstance(this.configurations.getRing_id());
+		if(lightHouse!=null){
+			lightHouse.terminate();
+		}
+		lightHouse = null;
+	}
+	
     public synchronized void start() throws Exception {
         if(m_status == STATUS_RUNNING||m_status == STATUS_START_INPROGRESS){
         	throw new StatusException(m_status,"Already running.");
@@ -205,9 +213,9 @@ public class LightHouse extends BeanAccessor implements KVS{
         try{
 
     		//コマンドキャッシュ
-			m_queue = new KVQueueLockingImpl(get_read_lock_timeout_millis);
-        	m_queue.setQueueLimit(queue_size_limit);
-        	m_queue.setEnqueueWaitTime(enqueue_timeout_millis);
+			m_queue = new KVQueueLockingImpl(this.configurations.get_read_lock_timeout_millis);
+        	m_queue.setQueueLimit(this.configurations.queue_size_limit);
+        	m_queue.setEnqueueWaitTime(this.configurations.enqueue_timeout_millis);
         	
         	//グループロック
         	group_locks = new ConcurrentHashMap<String,CountDownLatch>();
@@ -215,11 +223,11 @@ public class LightHouse extends BeanAccessor implements KVS{
 			/*
 			 * コマンドスレッドの準備
 			 * */
-        	if(commit_async){
-    			m_cmd_executor = Executors.newFixedThreadPool(async_thread_number);
+        	if(this.configurations.commit_async){
+    			m_cmd_executor = Executors.newFixedThreadPool(this.configurations.async_thread_number);
     			//コマンドスレッド
     			m_cmd_tasks = new LinkedList<CommandTask>();
-    			for(int i=0;i<async_thread_number;i++){
+    			for(int i=0;i<this.configurations.async_thread_number;i++){
     				CommandTask thread = new CommandTask("CommandTask-"+i);
     				m_cmd_tasks.add(thread);
     				m_cmd_executor.execute(thread);
@@ -227,7 +235,7 @@ public class LightHouse extends BeanAccessor implements KVS{
         	}
 			
         	//HashRIngをClientとともに作成
-			m_ring = client_manager.generateRing(super.ring_id,super.m_storage_configuration,super.ignore_client_failure);
+			m_ring = client_manager.generateRing(this.configurations.ignore_client_failure);
 			
 			/*
 			 * Ring上のClientをひとつずつ有効化
@@ -254,14 +262,14 @@ public class LightHouse extends BeanAccessor implements KVS{
 			update_rt_get_retry_number();
 			
 			//リモートロックの準備
-			if(isGlobal_lock_enable()){
-				lock_daemon = new GlobalLockServer(getGlobalLockLocalBindAddress(),getGlobal_lock_timeout_millis());
+			if(this.configurations.isGlobal_lock_enable()){
+				lock_daemon = new GlobalLockServer(this.configurations.getGlobalLockLocalBindAddress(),this.configurations.getGlobal_lock_timeout_millis());
 				try{
 					lock_daemon.startup();
 				}catch(java.net.BindException bind){
 					logger.warn(bind);
 				}
-				lock_client = new GlobalLockClientManager(this.getGlobalLockRemoteAddresses());
+				lock_client = new GlobalLockClientManager(this.configurations.getGlobalLockRemoteAddresses());
 				lock_client.startup();
 			}
 			
@@ -289,7 +297,7 @@ public class LightHouse extends BeanAccessor implements KVS{
         	throw new StatusException(m_status,"LightHouse is already stopped.");
 		}
     	
-        if(force_shutdown){
+        if(this.configurations.force_shutdown){
         	force = true;
         }
         
@@ -465,12 +473,12 @@ public class LightHouse extends BeanAccessor implements KVS{
 			e.printStackTrace();
 		}finally{
             try {
-				super.save();
+            	this.configurations.save();
 			} catch (Exception e) {
 				logger.error(e);
 			}
 			//removeInstance(ring_id);
-            logger.info("LightHouse:"+ring_id+" terminated.");
+            logger.info("LightHouse:"+this.configurations.ring_id+" terminated.");
     	}
     	
     }
@@ -494,7 +502,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 			throw new StatusException(m_status,"Lighthouse status is STATUS_START_INPROGRESS Now.");
 		}
 		
-		Client client = client_manager.addClient(ring_id,server_type, name, weight, host, host_port, clear_before_join,super.ignore_client_failure);
+		Client client = client_manager.addClient(server_type, name, weight, host, host_port, clear_before_join,this.configurations.ignore_client_failure);
 		  
 		if(m_status == STATUS_RUNNING){
 			if(client.setAvailable(true)){
@@ -539,7 +547,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 		 * 設定ファイルからエントリを削除
 		 */
 		if(delete_config){
-			ClientFactory.removeConfig(m_storage_configuration,server_id);
+			ClientFactory.removeConfig(this.configurations.m_storage_configuration,server_id);
 		}
 		
 	}
@@ -552,7 +560,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 		removeServer(server_id,true,false);
 			
 		//mod configuration also create Client inst .
-		Client client = ClientFactory.modConfig(ring_id,m_storage_configuration,server_id, server_type, name, weight, host, host_port, ignoreFailure,true);
+		Client client = ClientFactory.modConfig(this.configurations,server_id, server_type, name, weight, host, host_port, ignoreFailure,true);
 
 		if(m_status == STATUS_RUNNING){
     		if(client!=null){
@@ -650,8 +658,8 @@ public class LightHouse extends BeanAccessor implements KVS{
 			throw new IllegalArgumentException("null key is not acceptable.");
 		}
 		
-		QueueItem item = new QueueItem(QueueItem.CMD_DELETE,key,enqueue_timeout_millis);
-		if(commit_async){
+		QueueItem item = new QueueItem(QueueItem.CMD_DELETE,key,this.configurations.enqueue_timeout_millis);
+		if(this.configurations.commit_async){
 			//非同期Deleteはエンキューして終わり
 			this.m_queue.enqueue(item);
 			return true;
@@ -697,9 +705,9 @@ public class LightHouse extends BeanAccessor implements KVS{
     		/*
     		 * RingIDが設定されている場合は、プリフィックスとして追加
     		 */
-    		if(this.ring_id!=null){
-    			group= this.ring_id+"."+group;
-    			key= this.ring_id+"."+key;
+    		if(this.configurations.ring_id!=null){
+    			group= this.configurations.ring_id+"."+group;
+    			key= this.configurations.ring_id+"."+key;
     		}
     		
 
@@ -709,7 +717,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 				
 				if(node!=null&&node.isAvailable()){
 	        		Client client = node.getClient();
-					if(client!=null&&client.isAvailable(check_client_availability_strictly)){
+					if(client!=null&&client.isAvailable(this.configurations.check_client_availability_strictly)){
 
 						Integer clientId = client.getId();
 						if(!triedClients.contains(clientId))
@@ -814,8 +822,8 @@ public class LightHouse extends BeanAccessor implements KVS{
     	}
     	
 		String prefix = "";
-		if(this.ring_id!=null){
-			prefix = this.ring_id+".";
+		if(this.configurations.ring_id!=null){
+			prefix = this.configurations.ring_id+".";
 		}
 		if(group!=null&&group.length()>0){
 			group += META_DELIMITER;
@@ -836,7 +844,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 					continue;
 				}
 	    		
-				QueueItem item = new QueueItem(QueueItem.CMD_GET,group+key,enqueue_timeout_millis);
+				QueueItem item = new QueueItem(QueueItem.CMD_GET,group+key,this.configurations.enqueue_timeout_millis);
 				try{
 					QueueItem qedItem =  this.m_queue.enqueue(item);
 					if(qedItem!=null){
@@ -881,7 +889,7 @@ public class LightHouse extends BeanAccessor implements KVS{
     				Node node = ite.next();
     				if(node!=null&&node.isAvailable()){
     	        		Client client = node.getClient();
-    					if(client!=null&&client.isAvailable(check_client_availability_strictly)){
+    					if(client!=null&&client.isAvailable(this.configurations.check_client_availability_strictly)){
     						Integer clientId = client.getId();
     						if(!triedClients.contains(clientId))
     						{
@@ -926,7 +934,7 @@ public class LightHouse extends BeanAccessor implements KVS{
             		 */
         			List<Client> clients = client_manager.getAvailableClients();
 	        		Client client = clients.get(0);
-					if(client!=null&&client.isAvailable(check_client_availability_strictly)){
+					if(client!=null&&client.isAvailable(this.configurations.check_client_availability_strictly)){
 						try {
 							if(node_keys.size()==1){
 								/*
@@ -968,7 +976,7 @@ public class LightHouse extends BeanAccessor implements KVS{
         					Node node = ite.next();
         					if(node!=null&&node.isAvailable()){
         		        		Client client = node.getClient();
-        						if(client!=null&&client.isAvailable(check_client_availability_strictly)){
+        						if(client!=null&&client.isAvailable(this.configurations.check_client_availability_strictly)){
         							Integer clientId = client.getId();
         							if(!triedClients.contains(clientId))
         							{
@@ -1082,8 +1090,8 @@ public class LightHouse extends BeanAccessor implements KVS{
 			throw new IllegalArgumentException("null key is not acceptable.");
 		}
 		
-    	QueueItem item = new QueueItem(QueueItem.CMD_SET,key,value,enqueue_timeout_millis);
-		if(commit_async){
+    	QueueItem item = new QueueItem(QueueItem.CMD_SET,key,value,this.configurations.enqueue_timeout_millis);
+		if(this.configurations.commit_async){
 			this.m_queue.enqueue(item);
 			return (long)0;
 		}else{
@@ -1121,18 +1129,18 @@ public class LightHouse extends BeanAccessor implements KVS{
     		/*
     		 * RingIDが設定されている場合は、プリフィックスとして追加
     		 */
-    		if(this.ring_id!=null){
-    			group= this.ring_id+"."+group;
-    			key= this.ring_id+"."+key;
+    		if(this.configurations.ring_id!=null){
+    			group= this.configurations.ring_id+"."+group;
+    			key= this.configurations.ring_id+"."+key;
     		}
     		
     		/*
     		 * バリューコンテンツを圧縮
     		 */
-    		if(store_primitives_as_string&&compress_values&&value.toString().getBytes().length>compression_threshold){
+    		if(this.configurations.store_primitives_as_string&&this.configurations.compress_values&&value.toString().getBytes().length>this.configurations.compression_threshold){
     			try{
     				//圧縮タイプを指定して
-        			value = this.rt_compression_header + CodingUtils.compress(value.toString(),compression_type_i);
+        			value = this.rt_compression_header + CodingUtils.compress(value.toString(),this.configurations.compression_type_i);
     			}catch(Exception e){
     				logger.error(e);
     				//圧縮せず
@@ -1153,7 +1161,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 				
 				if(node!=null&&node.isAvailable()){
 	        		Client client = node.getClient();
-					if(client!=null&&client.isAvailable(check_client_availability_strictly)){
+					if(client!=null&&client.isAvailable(this.configurations.check_client_availability_strictly)){
 
 						Integer clientId = client.getId();
 						if(!storedClients.contains(clientId))
@@ -1324,10 +1332,10 @@ public class LightHouse extends BeanAccessor implements KVS{
 
 		//設定値が有効クライアント数より大きい場合は、有効クライアント数に合わせる。
 		//設定値がマイナスの場合は、有効クライアント数に合わせる。
-		if(max_rep_num==0 || replica_number>max_rep_num || replica_number<=0){
+		if(max_rep_num==0 || configurations.replica_number>max_rep_num || configurations.replica_number<=0){
 			rt_replica_number = max_rep_num;
 		}else{
-			rt_replica_number = replica_number;
+			rt_replica_number = configurations.replica_number;
 		}
 		
 		if(logger.isDebugEnabled()){
@@ -1349,10 +1357,10 @@ public class LightHouse extends BeanAccessor implements KVS{
 		
 		//設定値が有効クライアント数より大きい場合は、有効クライアント数に合わせる。
 		//設定値がマイナスの場合は、有効クライアント数に合わせる。
-		if(max_ret_num==0 || get_retry_number>max_ret_num || get_retry_number<=0){
+		if(max_ret_num==0 || configurations.get_retry_number>max_ret_num || configurations.get_retry_number<=0){
 			rt_get_retry_number = max_ret_num;
 		}else{
-			rt_get_retry_number = get_retry_number;
+			rt_get_retry_number = configurations.get_retry_number;
 		}
 		if(logger.isDebugEnabled()){
 			logger.debug("rt_get_retry_number="+rt_get_retry_number);
@@ -1360,80 +1368,6 @@ public class LightHouse extends BeanAccessor implements KVS{
 		
 	}
 
-
-	/**
-	 * For debug and test
-	 */
-	protected final void dump(){
-		dump("");
-	}
-	/**
-	 * For debug and test
-	 * @param title
-	 */
-	protected final void dump(String title){
-		dump(title,true,0);
-	}
-	/**
-	 * For debug and test
-	 * @param title
-	 * @param option
-	 */
-	protected final void dump(String title,int option){
-		dump(title,false,option);
-	}
-	/**
-	 * For debug and test
-	 * @param title
-	 * @param option
-	 */
-	protected final void dump(String title,boolean isDisp_config,int option){
-		if(logger.isDebugEnabled()){
-			try{
-				if(isDisp_config){
-					System.out.println("=====DUMPPING LightHouse("+this.hashCode()+")  "+title+"==============");
-					System.out.println("");
-					System.out.println("-----Status");
-					System.out.println("         "+(this.getStatus()==STATUS_RUNNING?"running":"stopped"));
-					System.out.println("");
-					System.out.println("-----Configuration");
-					System.out.println("         cgf_sanitize_keys(SET時のkeyをサニタイズ)="+super.isSanitize_keys());
-					System.out.println("         cfg_sanitize_encoding(SET時のkeyをサニタイズする時のエンコーディング)="+super.getSanitize_encoding());
-					System.out.println("         cgf_store_primitives_as_string(SET時のvalueを文字列として格納する)="+super.isStore_primitives_as_string());
-					System.out.println("         cfg_replica_number(SET時のレプリカのコピー数)="+super.getReplica_number());
-					System.out.println("         cfg_get_retry_number(GET時の最大試行ノード数)="+super.getGet_retry_number());
-					System.out.println("         cfg_set_thread_number(非同期処理する時の最大スレッド数)="+super.getAsync_thread_number());
-					System.out.println("         cfg_commit_async(非同期処理する)="+super.isCommit_async());
-					System.out.println("");
-					System.out.println("-----Servers");
-					Collection<Client> clients = client_manager.getAvailableClients();
-					if(clients!=null&&!clients.isEmpty()){
-						Iterator<Client>  ite = clients.iterator();
-						while(ite.hasNext()){
-							Client client = ite.next();
-							Integer id = client.getId();
-							System.out.println("         "+id+"<"+client.isAvailable(false)+">="+client.getName()+client.getClass());
-						}
-					}
-					System.out.println("");
-					System.out.println("-----Pending Requests");
-					System.out.println("         remains="+this.getPendingRequestNumber());
-					System.out.println("-----In Process Requests");
-					System.out.println("         remains="+this.getInprocessRequestNumber());
-					System.out.println("");
-				}
-				if(this.m_ring==null){
-					System.out.println("Ring is not generated yet.");
-				}else{
-					this.m_ring.dump(title, option);
-				}
-			}catch(Exception e){
-				e.printStackTrace();
-			}
-			
-		}
-		
-	}
 
 	/**
 	 * For debug and test
@@ -1464,125 +1398,35 @@ public class LightHouse extends BeanAccessor implements KVS{
 		return list;
 	}
 	
-	@Override
 	public void setup() throws ConfigurationException, StatusException{
 		
-    	super.setup();
-		
-    	CLASSLOADER = Thread.currentThread().getContextClassLoader();
-
-    	this.setSanitize_keys(super.sanitize_keys);
-    	this.setSanitize_encoding(super.sanitize_encoding);
-    	this.setReplica_number(super.replica_number);
-    	this.setGet_retry_number(super.get_retry_number);
-    	this.setCommit_async(super.commit_async);
-    	this.setAsync_thread_number(super.async_thread_number);
-    	this.setGet_read_lock_timeout_millis(super.get_read_lock_timeout_millis);
-    	this.setQueue_size_limit(super.queue_size_limit);
-    	this.setEnqueue_timeout_millis(super.enqueue_timeout_millis);
-    	this.setCompression_type(super.compression_type);
-		
-    }
-	
-	/**
-	 * SET時のkeyをサニタイズするかどうか？
-	 * @param cfg_sanitize_keys
-	 * @throws StatusException 
-	 */
-	@Override
-	public void setSanitize_keys(boolean sanitizeKeys) throws StatusException {
-		if(m_status != STATUS_STOP){
-    		throw new StatusException(m_status,"LightHouse is running now.");
-    	}
-		super.setSanitize_keys(sanitizeKeys);
-	}
-	
-	/**
-	 * SET時のkeyをサニタイズする時のエンコーディング
-	 * @param cfg_sanitize_encoding
-	 * @throws StatusException 
-	 */
-	@Override
-	public void setSanitize_encoding(String sanitizeEncoding) throws StatusException {
-		if(m_status != STATUS_STOP){
-    		throw new StatusException(m_status,"LightHouse is running now.");
-    	}
-		super.setSanitize_encoding(sanitizeEncoding);
-	}
-	
-	/**
-	 * SET時のレプリカのコピー数
-	 * @param cfg_replica_number
-	 */
-	@Override
-	public void setReplica_number(int replicaNumber) {
-		super.setReplica_number(replicaNumber);
-		update_rt_replica_number();
-	}
-
-	/**
-	 * GET時の最大試行ノード数
-	 * 0はすべてのノードを試行する。
-	 * @param cfg_get_retry_number
-	 */
-	@Override
-	public void setGet_retry_number(int getRetryNumber) {
-		super.setGet_retry_number(getRetryNumber);
-		update_rt_get_retry_number();
-	}
-	
-	/**
-	 * SET/DELETEを非同期処理するか？
-	 * @param cfg_commit_async
-	 * @throws StatusException
-	 */
-	@Override
-	public void setCommit_async(boolean commitAsync) throws StatusException {
-		if(m_status != STATUS_STOP){
-    		throw new StatusException(m_status,"LightHouse is running now.");
-    	}
-		super.setCommit_async(commitAsync);
-	}
-
-	/**
-	 * 非同期処理する時の最大スレッド数
-	 * @param cfg_set_thread_number
-	 * @throws Exception
-	 */
-	@Override
-	public void setAsync_thread_number(int asyncThreadNumber)throws StatusException {
-		if(m_status != STATUS_STOP){
-    		throw new StatusException(m_status,"LightHouse is running now.");
-    	}
-		if(async_thread_number<1){
-			return;
+		/*
+		 * Configurations is required.
+		 */
+		if(configurations==null){
+			throw new ConfigurationException("Nothing Configurations set to property. You must to set Configurations instance before setup.");
 		}
-		super.setAsync_thread_number(asyncThreadNumber);
+		configurations.setLightHouse(this);
+		
+    	/*
+    	 * Setting up runtime properties.
+    	 */
+    	configurations.setup();
+		rt_compression_header = LightHouse.COMPRESSION_HEADER_PREFIX+this.configurations.compression_type_i+META_DELIMITER;
+    	CLASSLOADER = Thread.currentThread().getContextClassLoader();
+    	
+    	setInstance(this.configurations.getRing_id(),this);
+		
     }
 
-	/**
-	 * SET時のキーReadロックの取得待ち時間
-	 * @param get_read_lock_timeout_millis
-	 * @throws Exception
-	 */
-	@Override
-	public void setGet_read_lock_timeout_millis(int getReadLockTimeoutMillis) throws StatusException {
-		if(m_status != STATUS_STOP){
-    		throw new StatusException(m_status,"LightHouse is running now. ");
-    	}
-		super.setGet_read_lock_timeout_millis(getReadLockTimeoutMillis);
-    }
-		
 	/**
 	 *  キューサイズの制限
 	 * @param queue_size_limit
 	 */
-	@Override
-	public void setQueue_size_limit(int queueSizeLimit){
+	protected void setQueueLimit(int queueSizeLimit){
 		if(m_queue!=null){
 			m_queue.setQueueLimit(queueSizeLimit);
 		}
-		super.setQueue_size_limit(queueSizeLimit);
 	}
 		
 	/**
@@ -1590,23 +1434,9 @@ public class LightHouse extends BeanAccessor implements KVS{
 	 * 0 = unlimited
 	 * @param enqueue_timeout_millis
 	 */
-	@Override
-	public void setEnqueue_timeout_millis(long enqueueTimeoutMillis){
+	protected void setEnqueueWaitTime(long enqueueTimeoutMillis){
 		if(m_queue!=null){
 			m_queue.setEnqueueWaitTime(enqueueTimeoutMillis);
-		}
-		super.setEnqueue_timeout_millis(enqueueTimeoutMillis);
-	}
-		
-	/**
-	 * バリューコンテンツの圧縮を有効時の圧縮メソッド
-	 * @param compression_type
-	 */
-	@Override
-	public void setCompression_type(String compressionType){
-		if(CodingUtils.isValidCompressionType(compression_type)){
-			super.setCompression_type(compressionType);
-			rt_compression_header = LightHouse.COMPRESSION_HEADER_PREFIX+compression_type_i+META_DELIMITER;
 		}
 	}
 
@@ -1686,7 +1516,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 			throw new StatusException(m_status,"LightHouse is not started yet.");
     	}
 		
-		String prefix = this.getRing_id()+".";
+		String prefix = this.configurations.getRing_id()+".";
 		if(group!=null&&group.length()>0){
 			prefix += group + META_DELIMITER;
 		}
@@ -1703,7 +1533,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 				Node node = ite.next();
 				if(node!=null&&node.isAvailable()){
 	        		Client client = node.getClient();
-					if(client!=null&&client.isAvailable(check_client_availability_strictly)){
+					if(client!=null&&client.isAvailable(this.configurations.check_client_availability_strictly)){
 						Integer clientId = client.getId();
 						try {
 							keys = client.keys(pattern);
@@ -1726,7 +1556,7 @@ public class LightHouse extends BeanAccessor implements KVS{
 					Node node = ite.next();
 					if(node!=null&&node.isAvailable()){
 		        		Client client = node.getClient();
-						if(client!=null&&client.isAvailable(check_client_availability_strictly)){
+						if(client!=null&&client.isAvailable(this.configurations.check_client_availability_strictly)){
 							Integer clientId = client.getId();
 							if(triedClients.contains(clientId)){
 								continue;
@@ -1800,44 +1630,97 @@ public class LightHouse extends BeanAccessor implements KVS{
 	}
 
 	@Override
-	public void lock(String key) throws Exception {
-		if(isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.lock(key);
+	public long lock(String key) throws Exception {
+		long token = Thread.currentThread().getId();
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			return lock_client.lock(token,key);
+		}
+		return token;
+	}
+
+	@Override
+	public void lock(long token,String key) throws Exception {
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			lock_client.lock(token,key);
 		}
 	}
 
 	@Override
-	public void lock(String group, String key) throws Exception {
-		if(isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.lock(group,key);
+	public long lock(String group, String key) throws Exception {
+		long token = Thread.currentThread().getId();
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			return lock_client.lock(token,group,key);
+		}
+		return token;
+	}
+	@Override
+	public void lock(long token,String group, String key) throws Exception {
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			lock_client.lock(token,group,key);
 		}
 	}
 
 	@Override
-	public void lockGroup(String group) throws Exception {
-		if(isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.lock(group,null);
+	public long lockGroup(String group) throws Exception {
+		long token = Thread.currentThread().getId();
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			return lock_client.lock(token,group,null);
+		}
+		return token;
+	}
+	
+	@Override
+	public void lockGroup(long token,String group) throws Exception {
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			lock_client.lock(token,group,null);
 		}
 	}
 	
 	@Override
-	public void unlock(String key) throws Exception {
-		if(isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.unlock(key);
+	public long unlock(String key) throws Exception {
+		long token = Thread.currentThread().getId();
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			return lock_client.unlock(token,key);
+		}
+		return token;
+	}
+
+	@Override
+	public void unlock(long token,String key) throws Exception {
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			lock_client.unlock(token,key);
 		}
 	}
 
 	@Override
-	public void unlock(String group, String key) throws Exception {
-		if(isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.unlock(group,key);
+	public long unlock(String group, String key) throws Exception {
+		long token = Thread.currentThread().getId();
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			return lock_client.unlock(token,group,key);
+		}
+		return token;
+	}
+
+	@Override
+	public void unlock(long token,String group, String key) throws Exception {
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			lock_client.unlock(token,group,key);
 		}
 	}
 
 	@Override
-	public void unlockGroup(String group) throws Exception {
-		if(isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.unlock(group,null);
+	public long unlockGroup(String group) throws Exception {
+		long token = Thread.currentThread().getId();
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			return lock_client.unlock(token,group,null);
+		}
+		return token;
+	}
+	
+	@Override
+	public void unlockGroup(long token,String group) throws Exception {
+		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
+			lock_client.unlock(token,group,null);
 		}
 	}
 

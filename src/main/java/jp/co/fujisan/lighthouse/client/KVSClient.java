@@ -50,8 +50,8 @@ public abstract class KVSClient extends LocalClient {
 	 * @param context
 	 * @throws Exception
 	 */
-	public KVSClient(String ring_id,String name, Integer id, int weight,String host,int host_port,Map<String,Object> context) throws Exception {
-		super(ring_id,name,id,weight,context);
+	public KVSClient(String name, Integer id, int weight,String host,int host_port,Map<String,Object> context) throws Exception {
+		super(name,id,weight,context);
 		try{
 			
 			if(host!=null&&host.length()>0){

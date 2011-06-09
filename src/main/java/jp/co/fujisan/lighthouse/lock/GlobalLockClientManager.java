@@ -35,6 +35,7 @@ public class GlobalLockClientManager implements Serializable, InitializingBean, 
 	public final static String DELIMITTER_EQ = "=";
 	public final static String PARAM_KEY = "key";
 	public final static String PARAM_GROUP = "group";
+	public final static String PARAM_ID = "id";
 	
 	private final static String CMD_PREFIX_LOCK = GlobalLockServer.CMD_LOCK+DELIMITTER_Q+PARAM_KEY+DELIMITTER_EQ;
 	private final static String CMD_PREFIX_UNLOCK = GlobalLockServer.CMD_UNLOCK+DELIMITTER_Q+PARAM_KEY+DELIMITTER_EQ;
@@ -42,43 +43,30 @@ public class GlobalLockClientManager implements Serializable, InitializingBean, 
 	InetSocketAddress[] remoteAddresses = null;
 	GlobalLockClient[] m_clients = null;
 	
-	public void lock(String key)throws LockTimeoutException,LockFailureException{
+	public long lock(long token,String key)throws LockTimeoutException,LockFailureException{
+		return lock(token,null,key);
+	}
+	public long lock(long token, String group,String key)throws LockTimeoutException,LockFailureException{
 		for(int i=0;i<m_clients.length;i++){
 			GlobalLockClient client = m_clients[i];
-			if(client!=null)
+			if(client!=null){
 				try {
-					client.lock(key);
-				}catch(LockTimeoutException e){
-					throw e;
-				}catch(LockFailureException e){
-					throw e;
-				} catch (Exception e) {
-					logger.error(e);
-				}
-		}
-	}
-	public void lock(String group,String key)throws LockTimeoutException,LockFailureException{
-		for(int i=0;i<m_clients.length;i++){
-			GlobalLockClient client = m_clients[i];
-			if(client!=null){
-				try{
-					client.lock(group,key);
-				}catch(LockTimeoutException e){
-					throw e;
-				}catch(LockFailureException e){
-					throw e;
-				} catch (Exception e) {
-					logger.error(e);
-				}
-			}
-		}
-	}
-	public void unlock(String key)throws LockTimeoutException,LockFailureException{
-		for(int i=0;i<m_clients.length;i++){
-			GlobalLockClient client = m_clients[i];
-			if(client!=null){
-				try{
-					client.unlock(key);
+					long result = client.lock(token,group,key);
+					//他のスレッドがロックを取得している
+					if(token!=result){
+						//Rollback
+						for(;i>=0;i--){
+							try{
+								GlobalLockClient rb_client = m_clients[i];
+								if(rb_client!=null){
+									rb_client.unlock(token,group, key);
+								}
+							}catch(Exception ignore){
+								
+							}
+						}
+						throw new LockFailureException("Failed to lock on node "+client.host+":"+client.port);						
+					}
 				}catch(LockTimeoutException e){
 					throw e;
 				}catch(LockFailureException e){
@@ -88,13 +76,20 @@ public class GlobalLockClientManager implements Serializable, InitializingBean, 
 				}
 			}
 		}
+		return token;
 	}
-	public void unlock(String group,String key)throws LockTimeoutException,LockFailureException{
+	public long unlock(long token,String key)throws LockTimeoutException,LockFailureException{
+		return unlock(token,null,key);
+	}
+	public long unlock(long token,String group,String key)throws LockTimeoutException,LockFailureException{
 		for(int i=0;i<m_clients.length;i++){
 			GlobalLockClient client = m_clients[i];
 			if(client!=null){
 				try{
-					client.unlock(group,key);
+					long result = client.unlock(token,group,key);
+					if(token!=result){
+						throw new LockFailureException("Failed to unlock on node "+client.host+":"+client.port);						
+					}
 				}catch(LockTimeoutException e){
 					throw e;
 				}catch(LockFailureException e){
@@ -104,6 +99,7 @@ public class GlobalLockClientManager implements Serializable, InitializingBean, 
 				}
 			}
 		}
+		return token;
 	}
 	
 	public GlobalLockClientManager()throws Exception{
@@ -163,25 +159,28 @@ public class GlobalLockClientManager implements Serializable, InitializingBean, 
 			// TODO Auto-generated constructor stub
 		}
 
-		public void lock(String key)throws Exception,LockTimeoutException,LockFailureException{
-			execute(CMD_PREFIX_LOCK+key);
+		public long lock(long id,String group,String key)throws Exception,LockTimeoutException,LockFailureException{
+			if(group!=null&&group.length()>0){
+				return execute(id,CMD_PREFIX_LOCK+key+DELIMITTER_AMP+PARAM_GROUP+DELIMITTER_EQ+group);
+			}else{
+				return execute(id,CMD_PREFIX_LOCK+key);
+			}
 		}
-		public void lock(String group,String key)throws Exception,LockTimeoutException,LockFailureException{
-			execute(CMD_PREFIX_LOCK+key+DELIMITTER_AMP+PARAM_GROUP+DELIMITTER_EQ+group);
-		}
-		public void unlock(String key)throws Exception,LockTimeoutException,LockFailureException{
-			execute(CMD_PREFIX_UNLOCK+key);
-		}
-		public void unlock(String group,String key)throws Exception,LockTimeoutException,LockFailureException{
-			execute(CMD_PREFIX_UNLOCK+key+DELIMITTER_AMP+PARAM_GROUP+DELIMITTER_EQ+group);
+		public long unlock(long id,String group,String key)throws Exception,LockTimeoutException,LockFailureException{
+			if(group!=null&&group.length()>0){
+				return execute(id,CMD_PREFIX_UNLOCK+key+DELIMITTER_AMP+PARAM_GROUP+DELIMITTER_EQ+group);
+			}else{
+				return execute(id,CMD_PREFIX_UNLOCK+key);
+			}
 		}
 		
-		private void execute(String cmd)throws Exception{
+		private long execute(long id,String cmd)throws Exception{
 			
 			Socket socket = null; 
 			try {
 				socket = new Socket(host,port); 
 				OutputStream out = new BufferedOutputStream( socket.getOutputStream());
+				cmd += DELIMITTER_AMP+PARAM_ID+DELIMITTER_EQ+id;
 				out.write( cmd.getBytes() );
 				out.write( "\r\n".getBytes() );
 				out.flush();
@@ -192,11 +191,12 @@ public class GlobalLockClientManager implements Serializable, InitializingBean, 
 					if(logger.isDebugEnabled()){
 						logger.debug(cmd +"=>"+ ret);
 					}
-					if ( GlobalLockServer.RES_OK.equals( ret ) ) {
-						return;
-					}else if ( GlobalLockServer.RES_TIME_OUT.equals( ret ) ) {
+					if ( GlobalLockServer.RES_TIME_OUT.equals( ret ) ) {
 						throw new LockTimeoutException("Timed out to lock on remote node ["+super.toString()+"].");
+					}else if ( GlobalLockServer.RES_ERROR.equals( ret ) ) {
+						throw new LockFailureException("Failed to lock on remote node ["+super.toString()+"].");
 					}
+					return Integer.parseInt(ret);
 				}
 				
 				throw new LockFailureException("Failed to lock on remote node ["+super.toString()+"].");

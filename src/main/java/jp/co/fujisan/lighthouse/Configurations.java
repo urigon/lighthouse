@@ -21,9 +21,9 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 
-public class BeanAccessor implements Serializable, InitializingBean, DisposableBean{
+public class Configurations implements Serializable{
 
-	private static final Log logger = LogFactory.getLog(BeanAccessor.class);
+	private static final Log logger = LogFactory.getLog(Configurations.class);
 
 	public static final Integer VERSION = 1;
 	
@@ -57,32 +57,32 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	public final static String CONFIG_KEY_IGNORE_CLIENT_FAILURE = "ignore_client_failure";
 	public final static String CONFIG_KEY_CONSOLE_ENABLE = "console_enable";
 
-	protected final static boolean CONFIG_DEFAULT_DEBUG = false;
-	protected final static String CONFIG_DEFAULT_RING_ID = null;
-	protected final static boolean CONFIG_DEFAULT_FORCE_SHUTDOWN  = false;
-	protected final static boolean CONFIG_DEFAULT_SANITIZE_KEY = true;
-	protected final static boolean CONFIG_DEFAULT_STORE_PRIMITIVES_AS_STRING = true;
-	protected final static String CONFIG_DEFAULT_SANITIZE_ENCODING = "UTF-8";
-	protected final static int CONFIG_DEFAULT_REPLICA_NUMBER = 0;
-	protected final static int CONFIG_DEFAULT_GET_RETRY_NUMBER = 0;	
-	protected final static int CONFIG_DEFAULT_ASYNC_THREAD_NUMBER = 3;	
-	protected final static boolean CONFIG_DEFAULT_COMMIT_ASYNC = false;	
-	protected final static boolean CONFIG_DEFAULT_CHECK_CLIENT_AVAILABILITY_STRICTLY = false;	
-	protected final static int CONFIG_DEFAULT_GET_READ_LOCK_TIMEOUT_MILLIS = 0;	
-	protected final static int CONFIG_DEFAULT_QUEUE_SIZE_LIMIT = 0;	
-	protected final static long CONFIG_DEFAULT_ENQUEUE_TIMEOUT_MILLIS = 0;	
-	protected final static boolean CONFIG_DEFAULT_COMPRESS_VALUES = false;	
-	protected final static String[] CONFIG_COMPRESSION_TYPES = CodingUtils.CONFIG_VALUES_COMPRESSION_TYPES;
-	protected final static String CONFIG_DEFAULT_COMPRESSION_TYPE = CONFIG_COMPRESSION_TYPES[CodingUtils.CODE_COMPRESSION_TYPE_DEFLATE];
-	protected final static int CONFIG_DEFAULT_COMPRESSION_THRESHOLD = 100;	
-	protected final static boolean CONFIG_DEFAULT_CAS_ENABLE = false;	
-	protected final static boolean CONFIG_DEFAULT_LOCK_GROUP = false;	
-	protected final static boolean CONFIG_DEFAULT_GLOBAL_LOCK_ENABLE = false;	
-	protected final static long CONFIG_DEFAULT_GLOBAL_LOCK_TIMEOUT_MILLIS = 0;	
-	protected final static String CONFIG_DEFAULT_GLOBAL_LOCK_LOCAL_BIND = "localhost:1976";	
-	protected final static String CONFIG_DEFAULT_GLOBAL_LOCK_REMOTE_HOSTS = "";	
-	protected final static boolean CONFIG_DEFAULT_IGNORE_CLIENT_FAILURE = true;	
-	protected final static boolean CONFIG_DEFAULT_CONSOLE_ENABLE = true;	
+	public final static boolean CONFIG_DEFAULT_DEBUG = false;
+	public final static String CONFIG_DEFAULT_RING_ID = null;
+	public final static boolean CONFIG_DEFAULT_FORCE_SHUTDOWN  = false;
+	public final static boolean CONFIG_DEFAULT_SANITIZE_KEY = true;
+	public final static boolean CONFIG_DEFAULT_STORE_PRIMITIVES_AS_STRING = true;
+	public final static String CONFIG_DEFAULT_SANITIZE_ENCODING = "UTF-8";
+	public final static int CONFIG_DEFAULT_REPLICA_NUMBER = 0;
+	public final static int CONFIG_DEFAULT_GET_RETRY_NUMBER = 0;	
+	public final static int CONFIG_DEFAULT_ASYNC_THREAD_NUMBER = 3;	
+	public final static boolean CONFIG_DEFAULT_COMMIT_ASYNC = false;	
+	public final static boolean CONFIG_DEFAULT_CHECK_CLIENT_AVAILABILITY_STRICTLY = false;	
+	public final static int CONFIG_DEFAULT_GET_READ_LOCK_TIMEOUT_MILLIS = 0;	
+	public final static int CONFIG_DEFAULT_QUEUE_SIZE_LIMIT = 0;	
+	public final static long CONFIG_DEFAULT_ENQUEUE_TIMEOUT_MILLIS = 0;	
+	public final static boolean CONFIG_DEFAULT_COMPRESS_VALUES = false;	
+	public final static String[] CONFIG_COMPRESSION_TYPES = CodingUtils.CONFIG_VALUES_COMPRESSION_TYPES;
+	public final static String CONFIG_DEFAULT_COMPRESSION_TYPE = CONFIG_COMPRESSION_TYPES[CodingUtils.CODE_COMPRESSION_TYPE_DEFLATE];
+	public final static int CONFIG_DEFAULT_COMPRESSION_THRESHOLD = 100;	
+	public final static boolean CONFIG_DEFAULT_CAS_ENABLE = false;	
+	public final static boolean CONFIG_DEFAULT_LOCK_GROUP = false;	
+	public final static boolean CONFIG_DEFAULT_GLOBAL_LOCK_ENABLE = false;	
+	public final static long CONFIG_DEFAULT_GLOBAL_LOCK_TIMEOUT_MILLIS = 0;	
+	public final static String CONFIG_DEFAULT_GLOBAL_LOCK_LOCAL_BIND = "localhost:1976";	
+	public final static String CONFIG_DEFAULT_GLOBAL_LOCK_REMOTE_HOSTS = "";	
+	public final static boolean CONFIG_DEFAULT_IGNORE_CLIENT_FAILURE = true;	
+	public final static boolean CONFIG_DEFAULT_CONSOLE_ENABLE = true;	
 
 	protected boolean debug_on = CONFIG_DEFAULT_DEBUG;
 	protected String ring_id = CONFIG_DEFAULT_RING_ID;
@@ -121,39 +121,9 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	protected PropertiesConfiguration m_configuration = null;
 	protected XMLConfiguration m_storage_configuration = null;
 
-	public BeanAccessor(){
+	public Configurations(){
 	}
 	
-	@Override
-	public void afterPropertiesSet() throws Exception {
-		this.setup();
-	}
-	@Override
-	public void destroy() throws Exception {
-		LightHouse lightHouse = getInstance(this.ring_id);
-		if(lightHouse!=null){
-			lightHouse.terminate();
-		}
-		lightHouse = null;
-	}
-	
-	/*
-	 *  instances are held with ring_id;
-	 */
-	private static Map<String,LightHouse> instances = new HashMap<String,LightHouse>();
-	
-	public static LightHouse getInstance(String ringId){
-		return instances.get(ringId);
-	}
-	
-	protected static LightHouse removeInstance(String ringId){
-		if(ringId==null){
-			instances.clear();
-			return null;
-		}
-		return instances.remove(ringId);
-	}
-
 	/**
 	 * 設定ファイルのフルパス
 	 * @return
@@ -320,14 +290,6 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	public void setRing_id(String ringId) throws ConfigurationException{
 		ring_id = ringId;
 		m_configuration.setProperty(CONFIG_KEY_RING_ID,ring_id);
-		LightHouse instance = instances.get(ringId);
-		if(instance!=null&&!this.equals(instance)){
-			logger.error("can not able to set duplicate ring_id="+ringId);
-			//throw new ConfigurationException("can not able to set duplicate ring_id="+ringId);
-			return;
-		}
-		instances.remove(ring_id);
-		instances.put(ringId, (LightHouse)this);
 	}
 
     /**
@@ -357,10 +319,13 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 
 	/**
 	 * SET時のkeyをサニタイズするかどうか？
-	 * @param sanitize_keys
-	 * @throws Exception 
+	 * @param cfg_sanitize_keys
+	 * @throws StatusException 
 	 */
 	public void setSanitize_keys(boolean sanitizeKeys) throws StatusException {
+		if(this.lighthouse!=null&&this.lighthouse.getStatus() != LightHouse.STATUS_STOP){
+    		throw new StatusException(this.lighthouse.getStatus(),"LightHouse is running now.");
+    	}
 		sanitize_keys = sanitizeKeys;
 		m_configuration.setProperty(CONFIG_KEY_SANITIZE_KEY,sanitize_keys);
 	}
@@ -375,13 +340,17 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 
 	/**
 	 * SET時のkeyをサニタイズする時のエンコーディング
-	 * @param sanitize_encoding
+	 * @param cfg_sanitize_encoding
 	 * @throws StatusException 
 	 */
 	public void setSanitize_encoding(String sanitizeEncoding) throws StatusException {
+		if(this.lighthouse!=null&&this.lighthouse.getStatus() != LightHouse.STATUS_STOP){
+    		throw new StatusException(this.lighthouse.getStatus(),"LightHouse is running now.");
+    	}
 		sanitize_encoding = sanitizeEncoding;
 		m_configuration.setProperty(CONFIG_KEY_SANITIZE_ENCODING,sanitize_encoding);
 	}
+	
 
 	/**
 	 * SET時のレプリカのコピー数
@@ -394,12 +363,16 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 
 	/**
 	 * SET時のレプリカのコピー数
-	 * @param replica_number
+	 * @param cfg_replica_number
 	 */
 	public void setReplica_number(int replicaNumber) {
 		replica_number = replicaNumber;
 		m_configuration.setProperty(CONFIG_KEY_REPLICA_NUMBER,replica_number);
+		if(this.lighthouse!=null){
+			this.lighthouse.update_rt_replica_number();
+		}
 	}
+
 
 	/**
 	 * GET時の最大試行ノード数
@@ -412,12 +385,16 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	/**
 	 * GET時の最大試行ノード数
 	 * 0はすべてのノードを試行する。
-	 * @param get_retry_number
+	 * @param cfg_get_retry_number
 	 */
 	public void setGet_retry_number(int getRetryNumber) {
 		get_retry_number = getRetryNumber;
 		m_configuration.setProperty(CONFIG_KEY_GET_RETRY_NUMBER,get_retry_number);
+		if(this.lighthouse!=null){
+			this.lighthouse.update_rt_get_retry_number();
+		}
 	}
+	
 
 	/**
 	 * 非同期処理する時の最大スレッド数
@@ -429,16 +406,19 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 
 	/**
 	 * 非同期処理する時の最大スレッド数
-	 * @param set_thread_number
-	 * @throws StatusException 
+	 * @param cfg_set_thread_number
+	 * @throws Exception
 	 */
-	public void setAsync_thread_number(int asyncThreadNumber) throws StatusException {
+	public void setAsync_thread_number(int asyncThreadNumber)throws StatusException {
+		if(this.lighthouse!=null&&this.lighthouse.getStatus() != LightHouse.STATUS_STOP){
+    		throw new StatusException(this.lighthouse.getStatus(),"LightHouse is running now.");
+    	}
 		async_thread_number = asyncThreadNumber;
 		if(async_thread_number<1){
 			return;
 		}
 		m_configuration.setProperty(CONFIG_KEY_ASYNC_THREAD_NUMBER,async_thread_number);
-	}
+    }
 
 	/**
 	 * SET/DELETEを非同期処理するか？
@@ -450,10 +430,13 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 
 	/**
 	 * SET/DELETEを非同期処理するか？
-	 * @param commit_async
-	 * @throws StatusException 
+	 * @param cfg_commit_async
+	 * @throws StatusException
 	 */
 	public void setCommit_async(boolean commitAsync) throws StatusException {
+		if(this.lighthouse!=null&&this.lighthouse.getStatus() != LightHouse.STATUS_STOP){
+    		throw new StatusException(this.lighthouse.getStatus(),"LightHouse is running now.");
+    	}
 		commit_async = commitAsync;
 		m_configuration.setProperty(CONFIG_KEY_COMMIT_ASYNC,commit_async);
 	}
@@ -485,14 +468,18 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	}
 
 	/**
-	 * GET時のキーReadロックの取得待ち時間
+	 * SET時のキーReadロックの取得待ち時間
 	 * @param get_read_lock_timeout_millis
-	 * @throws StatusException 
+	 * @throws Exception
 	 */
 	public void setGet_read_lock_timeout_millis(int getReadLockTimeoutMillis) throws StatusException {
+		if(this.lighthouse!=null&&this.lighthouse.getStatus() != LightHouse.STATUS_STOP){
+    		throw new StatusException(this.lighthouse.getStatus(),"LightHouse is running now.");
+    	}
 		get_read_lock_timeout_millis = getReadLockTimeoutMillis;
 		m_configuration.setProperty(CONFIG_KEY_GET_READ_LOCK_TIMEOUT_MILLIS,get_read_lock_timeout_millis);
-	}
+    }
+		
 
 	/**
 	 *  キューサイズの制限
@@ -506,10 +493,14 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	 *  キューサイズの制限
 	 * @param queue_size_limit
 	 */
-	public void setQueue_size_limit(int queueSizeLimit) {
+	public void setQueue_size_limit(int queueSizeLimit){
 		queue_size_limit = queueSizeLimit;
 		m_configuration.setProperty(CONFIG_KEY_QUEUE_SIZE_LIMIT,queue_size_limit);
+		if(this.lighthouse!=null){
+			lighthouse.setQueueLimit(queueSizeLimit);
+		}
 	}
+		
 
 	/**
 	 * キューサイズオーバー時のエンキュー待ち時間(ms)
@@ -524,11 +515,14 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	 * 0 = unlimited
 	 * @param enqueue_timeout_millis
 	 */
-	public void setEnqueue_timeout_millis(long enqueueTimeoutMillis) {
+	public void setEnqueue_timeout_millis(long enqueueTimeoutMillis){
 		enqueue_timeout_millis = enqueueTimeoutMillis;
 		m_configuration.setProperty(CONFIG_KEY_ENQUEUE_TIMEOUT_MILLIS,enqueue_timeout_millis);
+		if(this.lighthouse!=null){
+			lighthouse.setEnqueueWaitTime(enqueueTimeoutMillis);
+		}
 	}
-
+		
 	/**
 	 * バリューコンテンツの圧縮を有効にする。
 	 * @return
@@ -557,8 +551,12 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 	/**
 	 * バリューコンテンツの圧縮を有効時の圧縮メソッド
 	 * @param compression_type
+	 * @throws StatusException 
 	 */
-	public void setCompression_type(String compressionType) {
+	public void setCompression_type(String compressionType) throws StatusException{
+		if(this.lighthouse!=null&&this.lighthouse.getStatus() != LightHouse.STATUS_STOP){
+    		throw new StatusException(this.lighthouse.getStatus(),"LightHouse is running now.");
+    	}
 		if(CodingUtils.isValidCompressionType(compression_type)){
 			compression_type = compressionType;
 			compression_type_i = CodingUtils.getCompressionTypeCode(compressionType);
@@ -758,4 +756,11 @@ public class BeanAccessor implements Serializable, InitializingBean, DisposableB
 		m_configuration.setProperty(CONFIG_KEY_CONSOLE_ENABLE,console_enable);
 	}
 
+	/**
+	 * Callback
+	 */
+	private LightHouse lighthouse = null;
+	protected void setLightHouse(LightHouse lighthouse){
+		this.lighthouse = lighthouse;
+	}
 }

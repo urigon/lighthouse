@@ -6,12 +6,6 @@ import java.util.Set;
 
 public interface Client {
 	
-	/**
-	 * リングIDを返す
-	 * @return
-	 */
-	public String getRingId();
-		
 	 /**
 	 * @return the name
 	 */

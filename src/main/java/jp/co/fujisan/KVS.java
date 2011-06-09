@@ -28,11 +28,17 @@ public interface KVS {
 	public int count(String key_prefix) throws Exception;
 	public int count(String group,String key_prefix)throws Exception;
 	
-	public void lock(String key)throws Exception;
-	public void lock(String group,String key)throws Exception;
-	public void lockGroup(String group)throws Exception;
-	public void unlock(String key)throws Exception;
-	public void unlock(String group,String key)throws Exception;
-	public void unlockGroup(String group)throws Exception;
+	public long lock(String key)throws Exception;
+	public void lock(long token,String key)throws Exception;
+	public long lock(String group,String key)throws Exception;
+	public void  lock(long token,String group,String key)throws Exception;
+	public long lockGroup(String group)throws Exception;
+	public void lockGroup(long token,String group)throws Exception;
+	public long unlock(String key)throws Exception;
+	public void unlock(long token,String key)throws Exception;
+	public long unlock(String group,String key)throws Exception;
+	public void unlock(long token,String group,String key)throws Exception;
+	public long unlockGroup(String group)throws Exception;
+	public void unlockGroup(long token,String group)throws Exception;
 	
 }

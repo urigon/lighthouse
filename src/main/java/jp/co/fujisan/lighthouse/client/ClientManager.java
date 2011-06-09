@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
+import jp.co.fujisan.lighthouse.Configurations;
 import jp.co.fujisan.lighthouse.LightHouse;
 import jp.co.fujisan.lighthouse.hashring.HashRing;
 
@@ -25,38 +26,15 @@ public final class ClientManager implements ClientEventListener{
 	
 	private static final Log logger = LogFactory.getLog(ClientManager.class);
 
-	private XMLConfiguration m_config = null;
+	private LightHouse lighthouse = null;
+	private Configurations configurations = null;
 	
     private Map<Integer,Client> m_clients = new ConcurrentHashMap<Integer,Client>();
     private Map<Integer,Client> m_available_clients = new ConcurrentHashMap<Integer,Client>();
     
-    public ClientManager() {
-    }
-    
-    public ClientManager(XMLConfiguration config) {
-    	m_config = config;
-    }
-    
-    /**
-   	 * Generating Ring
-     * 
-     * @param ring_id
-     * @return
-     */
-    private HashRing generateRing(String ring_id,boolean ignoreClientFailure)
-    {
-    	/*
-    	 * Terminate clients before generate new Ring
-    	 */
-		terminateClients();
-
-    	List<Client> client_list = ClientFactory.createClients(ring_id,m_config,ignoreClientFailure);
-    	Iterator<Client> ite= client_list.iterator();
-    	while(ite.hasNext()){
-    		Client client = ite.next();
-    		client.setClientEventListener(this);
-    	}
-       return new HashRing(client_list);
+    public ClientManager(LightHouse lighthouse) {
+    	this.lighthouse = lighthouse;
+    	configurations = lighthouse.getConfiguraions();
     }
     
     /**
@@ -65,9 +43,19 @@ public final class ClientManager implements ClientEventListener{
      * @param config
      * @return
      */
-    public HashRing generateRing(String ring_id,XMLConfiguration config,boolean ignoreClientFailure){
-    	m_config = config;
-    	return this.generateRing(ring_id,ignoreClientFailure);
+    public HashRing generateRing(boolean ignoreClientFailure){
+    	/*
+    	 * Terminate clients before generate new Ring
+    	 */
+		terminateClients();
+
+    	List<Client> client_list = ClientFactory.createClients(configurations,ignoreClientFailure);
+    	Iterator<Client> ite= client_list.iterator();
+    	while(ite.hasNext()){
+    		Client client = ite.next();
+    		client.setClientEventListener(this);
+    	}
+       return new HashRing(client_list);
     }
 
 
@@ -109,9 +97,7 @@ public final class ClientManager implements ClientEventListener{
 	 */
 	@Override
 	public synchronized void  availableEvent(Client client,boolean avaliable){
-		LightHouse lighthouse = LightHouse.getInstance(client.getRingId());
 		if(lighthouse!=null){
-			XMLConfiguration config = lighthouse.getStorage_configuration();
 			Integer id = client.getId();
 
 			if(avaliable){
@@ -124,7 +110,7 @@ public final class ClientManager implements ClientEventListener{
 			}
 			lighthouse.update_rt_get_retry_number();
 			lighthouse.update_rt_replica_number();
-			ClientFactory.markAvailable(config,id,avaliable);
+			ClientFactory.markAvailable(configurations.getStorage_configuration(),id,avaliable);
 		}
 	}
 	
@@ -139,16 +125,13 @@ public final class ClientManager implements ClientEventListener{
 	 */
 	@Override
 	public synchronized void  failEvent(Client client,Exception e){
-		LightHouse lighthouse = LightHouse.getInstance(client.getRingId());
 		if(lighthouse!=null){
-
-			XMLConfiguration config = lighthouse.getStorage_configuration();
 			Integer id = client.getId();
 			logger.error("Unrecoverable failure detected on client["+client.getId()+"].",e);
 			m_available_clients.remove(id);
 			lighthouse.update_rt_get_retry_number();
 			lighthouse.update_rt_replica_number();
-			ClientFactory.markFailure(config,id,e);
+			ClientFactory.markFailure(configurations.getStorage_configuration(),id,e);
 		}
 		
 	}
@@ -162,16 +145,14 @@ public final class ClientManager implements ClientEventListener{
 	 */
 	@Override
 	public synchronized void  terminateEvent(Client client){
-		LightHouse lighthouse = LightHouse.getInstance(client.getRingId());
 		if(lighthouse!=null){
-			XMLConfiguration config = lighthouse.getStorage_configuration();
 			Integer id = client.getId();
 			logger.info("Termination detected on client["+id+"].");
 			m_clients.remove(id);
 			m_available_clients.remove(id);
 			lighthouse.update_rt_get_retry_number();
 			lighthouse.update_rt_replica_number();
-			ClientFactory.markTerminate(config,id);
+			ClientFactory.markTerminate(configurations.getStorage_configuration(),id);
 		}
 	
 	}
@@ -231,19 +212,20 @@ public final class ClientManager implements ClientEventListener{
 	 * @throws Exception　クライアント実装のコンストラクタでスローされる例外
 	 * @see {@link #server_types} {@link #addConfig(XMLConfiguration, Integer, String, String, int, String, int, String, int, Date, Date, Exception)}
 	 */
-	public Client addClient(String ring_id,String server_type,String name,int weight,String host,int host_port,boolean clear_before_join,boolean ignoreClientFailure) throws Exception{
+	public Client addClient(String server_type,String name,int weight,String host,int host_port,boolean clear_before_join,boolean ignoreClientFailure) throws Exception{
 		
 		//Create Client inst. also add configuration.
-		Integer id = ClientFactory.genId(m_config);
+		XMLConfiguration config = configurations.getStorage_configuration();
+		Integer id = ClientFactory.genId(config);
 		Date instanciated_date = new Date();
-		ClientFactory.addConfig(m_config,id, server_type, name, weight, host, host_port, instanciated_date,null,null);		
-		int index = ClientFactory.getIndex(m_config,id);
+		ClientFactory.addConfig(config,id, server_type, name, weight, host, host_port, instanciated_date,null,null);		
+		int index = ClientFactory.getIndex(config,id);
 		if(index<0){
 			//No defined configuration
 			throw new ConfigurationException("Configuration failed of client("+id+").");
 		}
 		  
-		Client client = ClientFactory.createClient(ring_id,m_config,index,ignoreClientFailure);
+		Client client = ClientFactory.createClient(configurations,index,ignoreClientFailure);
 		if(client!=null){
 			m_clients.put(client.getId(), client);
 			client.setClientEventListener(this);
