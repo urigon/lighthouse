@@ -177,8 +177,8 @@ public class LightHouse implements KVS, InitializingBean, DisposableBean{
 	 */
 	private String rt_compression_header = COMPRESSION_HEADER_PREFIX+Configurations.CONFIG_DEFAULT_COMPRESSION_TYPE+META_DELIMITER;
 	
-	public LightHouse()throws Exception{
-    }
+	public LightHouse(){
+	}
 
 	public void setConfigurations(Configurations configurations){
 		this.configurations = configurations;
@@ -1415,8 +1415,7 @@ public class LightHouse implements KVS, InitializingBean, DisposableBean{
     	configurations.setup();
 		rt_compression_header = LightHouse.COMPRESSION_HEADER_PREFIX+this.configurations.compression_type_i+META_DELIMITER;
     	CLASSLOADER = Thread.currentThread().getContextClassLoader();
-    	
-		
+
     	setInstance(this.configurations.getRing_id(),this);
 		
     }
