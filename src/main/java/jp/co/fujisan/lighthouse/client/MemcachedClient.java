@@ -27,7 +27,6 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 import jp.co.fujisan.lighthouse.CodingUtils;
-import jp.co.fujisan.lighthouse.LightHouse;
 import jp.co.fujisan.lighthouse.client.exception.UnRecoverableException;
 
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -110,8 +109,8 @@ public class MemcachedClient extends KVSClient {
 	 * @param host
 	 * @throws UnknownHostException 
 	 */
-	public MemcachedClient(String ring_id,String name, Integer id, int weight,String host,int host_port, Map<String,Object> context) throws Exception {
-		super(ring_id,name,id,weight,host,host_port,context);
+	public MemcachedClient(String name, Integer id, int weight,String host,int host_port, Map<String,Object> context) throws Exception {
+		super(name,id,weight,host,host_port,context);
 		super.className = MemcachedClient.class.getSimpleName();
 
 		this.sanitizeKeys       = true;
@@ -193,8 +192,11 @@ public class MemcachedClient extends KVSClient {
 		}catch(Exception e){
 			e.printStackTrace();
 		}*/
-		
-		this.classLoader = LightHouse.CLASSLOADER;
+		try{
+			this.classLoader = this.getClass().getClassLoader();
+		}catch(Exception ignore){
+			
+		}
 	}
 	
 	/** 

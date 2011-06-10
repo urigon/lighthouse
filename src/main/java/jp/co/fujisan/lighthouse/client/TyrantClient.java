@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import jp.co.fujisan.lighthouse.Configurations;
+
 import tokyotyrant.RDB;
 import tokyotyrant.transcoder.*;
 
@@ -24,14 +26,16 @@ public class TyrantClient extends KVSClient {
 	
 	RDBConnectionPool rdb_conn_pool = null;
 
+	private boolean isStore_primitives_as_string = Configurations.CONFIG_DEFAULT_STORE_PRIMITIVES_AS_STRING;
+	
 	/**
 	 * @param name
 	 * @param id
 	 * @param host
 	 * @throws UnknownHostException 
 	 */
-	public TyrantClient(String ring_id,String name, Integer id, int weight,String host,int host_port, Map<String,Object> context) throws Exception {
-		super(ring_id,name,id,weight,host,host_port,context);
+	public TyrantClient(String name, Integer id, int weight,String host,int host_port, Map<String,Object> context) throws Exception {
+		super(name,id,weight,host,host_port,context);
 		super.className = TyrantClient.class.getSimpleName();
 		
 		logger = LogFactory.getLog(TyrantClient.class);
@@ -39,6 +43,10 @@ public class TyrantClient extends KVSClient {
 		conn_pool.clear();
 		rdb_conn_pool = new RDBConnectionPool(address);
 		conn_pool = rdb_conn_pool;
+		
+		try{
+			isStore_primitives_as_string = (Boolean)context.get(Configurations.CONFIG_KEY_STORE_PRIMITIVES_AS_STRING);
+		}catch(Exception ignore){}
 
 	}
 
@@ -152,7 +160,7 @@ public class TyrantClient extends KVSClient {
 	final public boolean set(String key, Object value) throws Exception {
 		RDB rdb = rdb_conn_pool.getRDB();
 		try{
-			if(!global_config.isStore_primitives_as_string()){
+			if(!isStore_primitives_as_string){
 				return rdb.put(key, value,getTransCoder(value));
 			}else{
 				return rdb.put(key, value);
@@ -251,11 +259,11 @@ public class TyrantClient extends KVSClient {
 		private synchronized void createRDB()throws Exception{
 			
 			RDB rdb = new RDB();
-			if(global_config.isSanitize_keys()){
-				rdb.setKeyTranscoder(new StringTranscoder(global_config.getSanitize_encoding()));
+			if(isSanitize_keys){
+				rdb.setKeyTranscoder(new StringTranscoder(sanitize_encoding));
 			}
-			if(global_config.isStore_primitives_as_string()){
-				rdb.setValueTranscoder(new StringTranscoder(global_config.getSanitize_encoding()));
+			if(isStore_primitives_as_string){
+				rdb.setValueTranscoder(new StringTranscoder(sanitize_encoding));
 			}
 			rdb.open(address);
 			Integer hash_code = rdb.hashCode();			

@@ -14,8 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Map.Entry;
 
-import jp.co.fujisan.lighthouse.BeanAccessor;
-import jp.co.fujisan.lighthouse.LightHouse;
+import jp.co.fujisan.lighthouse.Configurations;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -34,14 +33,8 @@ public abstract class LocalClient implements Client {
 	
 	protected String className = Client.class.getSimpleName();
 	
-	protected static BeanAccessor global_config = null;
-
-	protected String ring_id = null;
-	
-	@Override
-	public String getRingId(){
-		return ring_id;
-	}
+	protected boolean isSanitize_keys = Configurations.CONFIG_DEFAULT_SANITIZE_KEY;
+	protected String sanitize_encoding = Configurations.CONFIG_DEFAULT_SANITIZE_ENCODING;
 	
 	public LocalClient(){
 	}
@@ -52,15 +45,20 @@ public abstract class LocalClient implements Client {
 	 * @param host
 	 * @throws UnknownHostException 
 	 */
-	public LocalClient(String ring_id,String name, Integer id, int weight,Map<String,Object> context) throws Exception {
-		this.ring_id = ring_id;
+	public LocalClient(String name, Integer id, int weight,Map<String,Object> context) throws Exception {
 		this.name = name;
 		this.id = id;
 		this.weight = weight;
 		this.context = context;
+		try{
+			this.isSanitize_keys = (Boolean)context.get(Configurations.CONFIG_KEY_SANITIZE_KEY);
+		}catch(Exception ignore){
+		}
+		try{
+			this.sanitize_encoding = (String)context.get(Configurations.CONFIG_KEY_SANITIZE_ENCODING);
+		}catch(Exception ignore){
+		}
 		
-		global_config = LightHouse.getInstance(ring_id);
-
 		this.isAvailable = false;
 	}
 
@@ -188,11 +186,11 @@ public abstract class LocalClient implements Client {
 		return null;
 	}
 	
-	protected static String sanitizeKey( String key ) throws UnsupportedEncodingException {
-		return ( global_config.isSanitize_keys() ) ? URLEncoder.encode( key, global_config.getSanitize_encoding() ) : key;
+	protected String sanitizeKey( String key ) throws UnsupportedEncodingException {
+		return ( isSanitize_keys ) ? URLEncoder.encode( key, sanitize_encoding ) : key;
 	}
-	protected static String desanitizeKey( String key ) throws UnsupportedEncodingException {
-		return ( global_config.isSanitize_keys() ) ? URLDecoder.decode( key, global_config.getSanitize_encoding() ) : key;
+	protected String desanitizeKey( String key ) throws UnsupportedEncodingException {
+		return ( isSanitize_keys ) ? URLDecoder.decode( key, sanitize_encoding ) : key;
 	}
 
 	

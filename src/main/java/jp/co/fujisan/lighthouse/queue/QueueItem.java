@@ -83,14 +83,6 @@ public class QueueItem {
 		return key;
 	}
 	
-	public int getCommand(){
-		return command;
-	}
-
-	public String getKey(){
-		return key;
-	}
-	
 	public Object value(){
 		return value;
 	}

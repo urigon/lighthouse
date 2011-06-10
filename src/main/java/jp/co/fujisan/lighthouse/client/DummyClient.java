@@ -20,8 +20,8 @@ public class DummyClient extends LocalClient {
 	 * @param host
 	 * @throws UnknownHostException 
 	 */
-	public DummyClient(String ring_id,String name, Integer id, String type,Map<String,Object> context) throws Exception {
-		super(ring_id,name,id,0,context);
+	public DummyClient(String name, Integer id, String type,Map<String,Object> context) throws Exception {
+		super(name,id,0,context);
 		super.className = DummyClient.class.getSimpleName();
 		this.type = type;
 		this.isAvailable = false;
