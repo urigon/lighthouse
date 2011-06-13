@@ -11,20 +11,20 @@ http://www.springframework.org/schema/tx http://www.springframework.org/schema/t
   <bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
     <property name="locations">
       <list>
-        <value>testcase.properties</value>
+        <value>file:/home/development/workspace/lighthouse/src/test/resources/testcase.properties</value>
       </list>
     </property>
   </bean>
 
 
   <!-- Lighthouse -->
-  <bean id="Lighthouse_configured" class="jp.co.fujisan.lighthouse.LightHouse">
+  <bean id="Configurations" class="jp.co.fujisan.lighthouse.Configurations">
 	<property name="configuration_path"><value>${lighthouse.config.path}</value></property>
 	<property name="storage_path"><value>${lighthouse.storage.path}</value></property>
+	<property name="ring_id"><value>test_ring</value></property>
   </bean>
-  <bean id="Lighthouse_not_configured" class="jp.co.fujisan.lighthouse.LightHouse">
-	<property name="configuration_path"><value>${lighthouse.config.temp.path}</value></property>
-	<property name="storage_path"><value>${lighthouse.storage.temp.path}</value></property>
+  <bean id="Lighthouse_configured" class="jp.co.fujisan.lighthouse.LightHouse" scope="singleton" destroy-method="destroy">
+	<property name="configurations"><ref local="Configurations"/></property>
   </bean>
 
   <!-- GlobalLockServer -->

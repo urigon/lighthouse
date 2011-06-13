@@ -33,12 +33,12 @@ public abstract class KVSClient extends LocalClient {
 	 */
 	protected ConnectionPool conn_pool = null;
 	final static protected int POOL_INIT_SIZE = 1;
-	final static protected int POOL_MIN_SIZE = 10;
+	final static protected int POOL_MIN_SIZE = POOL_INIT_SIZE;
 	final static protected int POOL_MAX_SIZE = 100;
 	
 	private static Timer pool_sweeper =  null;
 	protected static ConnectionPoolSweeperTask pool_sweeper_task = null;
-	final static protected int POOL_SWEEP_INTERVAL = 60000; //1min
+	final static protected int POOL_SWEEP_INTERVAL = 180000; //3min
 	
 	/**
 	 * 
@@ -50,8 +50,8 @@ public abstract class KVSClient extends LocalClient {
 	 * @param context
 	 * @throws Exception
 	 */
-	public KVSClient(String ring_id,String name, Integer id, int weight,String host,int host_port,Map<String,Object> context) throws Exception {
-		super(ring_id,name,id,weight,context);
+	public KVSClient(String name, Integer id, int weight,String host,int host_port,Map<String,Object> context) throws Exception {
+		super(name,id,weight,context);
 		try{
 			
 			if(host!=null&&host.length()>0){
@@ -304,7 +304,9 @@ public abstract class KVSClient extends LocalClient {
 					 */
 					int current_size = pool.size();
 					int result_size = pool.fit(KVSClient.POOL_MIN_SIZE);
-					logger.debug("connection pool("+pool.getPoolName()+") sweeped ["+current_size+"->"+result_size+"]");
+					if(logger.isDebugEnabled()&&current_size>result_size){
+						logger.debug("connection pool("+pool.getPoolName()+") sweeped ["+current_size+"->"+result_size+"]");
+					}
 				}
 			}
 		}

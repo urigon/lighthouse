@@ -13,9 +13,11 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
+import jp.co.fujisan.lighthouse.Configurations;
 import jp.co.fujisan.lighthouse.LightHouse;
 
 import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -83,8 +85,11 @@ public final class ClientFactory {
 	}
 
 	
-	protected static final List<Client> createClients(String ring_id,XMLConfiguration config,boolean ignoreClientFailure){
+	protected static final List<Client> createClients(Configurations configurations,boolean ignoreClientFailure){
 		
+		String ring_id = configurations.getRing_id();
+		PropertiesConfiguration globalConfig = configurations.getConfiguration();
+		XMLConfiguration config = configurations.getStorage_configuration();
 		List<Client> client_list = new ArrayList<Client>();
 		
 		String prop_key = PROP_KEY_NODE_NAME;
@@ -102,7 +107,7 @@ public final class ClientFactory {
     		}
 	        for(int n = 0 ; n < num ; n++){
 	        	try{
-	        	  Client client = ClientFactory.createClient(ring_id,config, n,ignoreClientFailure);
+	        	  Client client = ClientFactory.createClient(configurations,n,ignoreClientFailure);
 	        	  if(client!=null){
 	            	  client_list.add(client); 
 	        	  }
@@ -115,12 +120,22 @@ public final class ClientFactory {
 		return client_list;
 	}
 	
-	protected static final Client createClient(String ring_id,XMLConfiguration config, int index,boolean ignoreFailure) throws Exception {
+	protected static final Client createClient(Configurations configurations, int index,boolean ignoreFailure) throws Exception {
   	  
+	  PropertiesConfiguration globalConfig = configurations.getConfiguration();
+	  XMLConfiguration config = configurations.getStorage_configuration();
+	  
 	  Integer id = null;
 	  String server_type=null,key=null,name=null,host=null,failure=null;
 	  int weight=1,host_port=0;
+	  
 	  Map<String,Object> context = new HashMap<String,Object>();
+	  Iterator<String> configKeys = globalConfig.getKeys();
+	  while(configKeys.hasNext()){
+		  String configKey = configKeys.next();
+		  context.put(configKey, globalConfig.getProperty(configKey));
+	  }
+	  
 	  /*
 	   * Getting property on nodes.xml
 	   * <nodes>
@@ -238,7 +253,7 @@ public final class ClientFactory {
 			  
 			/*Now creating client. 
 			 * */
-			client = createClient(ring_id,config,id,server_type,name,weight,host,host_port,context);
+			client = createClient(config,id,server_type,name,weight,host,host_port,context);
 			
 			/* 
 			 * クライアントが作成されたら、そのIDと作成日時を記録しておく。
@@ -310,7 +325,7 @@ public final class ClientFactory {
 
 	}
 	
-	protected static final Client createClient(String ring_id,XMLConfiguration config,Integer id,String server_type,String name,int weight,String host,int host_port,Map<String,Object> context) throws Exception{
+	protected static final Client createClient(XMLConfiguration config,Integer id,String server_type,String name,int weight,String host,int host_port,Map<String,Object> context) throws Exception{
 	  	  
 		  Client client = null; 
 		  if(logger.isDebugEnabled()){
@@ -323,21 +338,21 @@ public final class ClientFactory {
 				  /*
 				   * 障害履歴のあるクライアントは、DummyClientインスタンスでプロパティのみアクセス可能にしておく。
 				   */
-				  client = new DummyClient(ring_id,name,id,server_type,context);
+				  client = new DummyClient(name,id,server_type,context);
 				  
 			  }else{
 				  
 				  if(SERVER_TYPE_MEMCACHED.compareTo(server_type)==0){
-					  client = new MemcachedClient(ring_id,name,id, weight,host,host_port,context);
+					  client = new MemcachedClient(name,id, weight,host,host_port,context);
 				  }
 				  if(SERVER_TYPE_REDIS.compareTo(server_type)==0){
-					  client = new RedisClient(ring_id,name,id,weight,host,host_port,context);
+					  client = new RedisClient(name,id,weight,host,host_port,context);
 				  }
 				  if(SERVER_TYPE_TYRANT.compareTo(server_type)==0){
-					  client = new TyrantClient(ring_id,name,id,weight,host,host_port,context);
+					  client = new TyrantClient(name,id,weight,host,host_port,context);
 				  }
 				  if(SERVER_TYPE_DEBUG.compareTo(server_type)==0){
-					  client = new DebugClient(ring_id,name,id,weight,context);
+					  client = new DebugClient(name,id,weight,context);
 				  }
 				  
 			  }
@@ -571,8 +586,9 @@ public final class ClientFactory {
 
 	}
 	
-	public synchronized static Client modConfig(String ring_id,XMLConfiguration config,Integer id,String server_type,String name,int weight,String host,int host_port,boolean ignoreFailure,boolean create) throws ConfigurationException{
+	public synchronized static Client modConfig(Configurations configurations,Integer id,String server_type,String name,int weight,String host,int host_port,boolean ignoreFailure,boolean create) throws ConfigurationException{
 		
+		XMLConfiguration config = configurations.getStorage_configuration();
 		try{
 			int index = getIndex(config,id);
 			if(index<0){
@@ -603,7 +619,7 @@ public final class ClientFactory {
 			
 			if(create){
 				//start client with new configuration
-				return createClient(ring_id,config,index,ignoreFailure);
+				return createClient(configurations,index,ignoreFailure);
 			}
 		}catch(Exception e){
 			logger.error(e);

@@ -13,8 +13,8 @@ public class RedisClient extends KVSClient {
 	 * @param host
 	 * @throws UnknownHostException 
 	 */
-	public RedisClient(String ring_id,String name, Integer id, int weight, String host,int host_port, Map<String,Object> context) throws Exception {
-		super(ring_id,name,id,weight,host,host_port,context);
+	public RedisClient(String name, Integer id, int weight, String host,int host_port, Map<String,Object> context) throws Exception {
+		super(name,id,weight,host,host_port,context);
 		super.className = RedisClient.class.getSimpleName();
 	}
 

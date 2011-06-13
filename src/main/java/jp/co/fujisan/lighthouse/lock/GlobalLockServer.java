@@ -35,24 +35,28 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 
 	public final static String CMD_LOCK = "lock";
 	public final static String CMD_UNLOCK = "unlock";
-	public final static String RES_OK = "ok";
+	//public final static String RES_OK = "ok";
 	public final static String RES_TIME_OUT = "timeout";
 	public final static String RES_ERROR = "error";
 	
 	private final static Pattern ptrn_lock = Pattern.compile(
 			"^"+CMD_LOCK+"\\"+GlobalLockClientManager.DELIMITTER_Q+
-			GlobalLockClientManager.PARAM_KEY+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
+			GlobalLockClientManager.PARAM_KEY+GlobalLockClientManager.DELIMITTER_EQ+"(.*)"+
+			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_ID+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
 	private final static Pattern ptrn_lock_group = Pattern.compile(
 			"^"+CMD_LOCK+"\\"+GlobalLockClientManager.DELIMITTER_Q+
 			GlobalLockClientManager.PARAM_KEY+GlobalLockClientManager.DELIMITTER_EQ+"(.*)"+
-			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_GROUP+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
+			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_GROUP+GlobalLockClientManager.DELIMITTER_EQ+"(.*)"+
+			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_ID+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
 	private final static Pattern ptrn_unlock = Pattern.compile(
 			"^"+CMD_UNLOCK+"\\"+GlobalLockClientManager.DELIMITTER_Q+
-			GlobalLockClientManager.PARAM_KEY+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
+			GlobalLockClientManager.PARAM_KEY+GlobalLockClientManager.DELIMITTER_EQ+"(.*)"+
+			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_ID+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
 	private final static Pattern ptrn_unlock_group = Pattern.compile(
 			"^"+CMD_UNLOCK+"\\"+GlobalLockClientManager.DELIMITTER_Q+
 			GlobalLockClientManager.PARAM_KEY+GlobalLockClientManager.DELIMITTER_EQ+"(.*)"+
-			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_GROUP+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
+			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_GROUP+GlobalLockClientManager.DELIMITTER_EQ+"(.*)"+
+			"\\"+GlobalLockClientManager.DELIMITTER_AMP+GlobalLockClientManager.PARAM_ID+GlobalLockClientManager.DELIMITTER_EQ+"(.*)$");
 
 	private ExecutorService m_executor_service = null;
 	private ServerThread m_server_thread = null; 
@@ -150,9 +154,14 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 	{
 
 		private String key = null;
-		
-		public LockExpiration(String key){
+		private long id = 0;
+		public LockExpiration(long id, String key){
+			this.id = id;
 			this.key = key;
+		}
+		
+		public long getId(){
+			return this.id;
 		}
 		
 		@Override
@@ -166,7 +175,10 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 		
 		@Override
 		public boolean cancel(){
-			logger.debug("Lock ["+key+"] canceled !");
+			LockExpiration exp = m_locks.remove(key);
+			if(logger.isDebugEnabled()&&exp!=null){
+				logger.debug("Lock ["+key+"] canceled !");
+			}
 			return super.cancel();
 		}
 	}
@@ -197,19 +209,30 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 						logger.debug("request [ " + request+" ]");
 					String token = null;
 					
+					long lock_id = 0;
 					if(request.startsWith(CMD_LOCK)){
 						Matcher m = ptrn_lock_group.matcher(request);
+						String id = null;
 						if(m.find()){
 							String key = m.group(1);
 							String group = m.group(2);
 							if(key!=null&&group!=null){
 								token = group+":"+key; 
 							}
+							id = m.group(3);
 						}else{
 							m = ptrn_lock.matcher(request);
 							if(m.find()){
 								String key = m.group(1);
 								token = key; 
+								id = m.group(2);
+							}
+						}
+						if(id!=null&&id.length()>0){
+							try{
+								lock_id = Long.parseLong(id);
+							}catch(Exception e){
+								
 							}
 						}
 						
@@ -225,15 +248,15 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 									LockExpiration expire = null;
 									synchronized(m_locks){
 										if(!m_locks.containsKey(token)){
-											expire = new LockExpiration(token);
+											expire = new LockExpiration(lock_id,token);
 											m_locks.put(token,expire );
 										}
 									}
 									if(expire!=null){
 										lock_expire_timer.schedule(expire, exipreTimeout);
 										if(logger.isDebugEnabled())
-											logger.debug("locked ("+expire.hashCode()+"):"+expire.scheduledExecutionTime()+"ms with token = " + token);
-										out.write( RES_OK.getBytes() );
+											logger.debug("locked ("+expire.getId()+"):"+expire.scheduledExecutionTime()+"ms with token = " + token);
+										out.write( String.valueOf(expire.getId()).getBytes() );
 										return;
 									}else{
 										sleep(10);
@@ -255,17 +278,26 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 						
 					}else if(request.startsWith(CMD_UNLOCK)){
 						Matcher m = ptrn_unlock_group.matcher(request);
+						String id = null;
 						if(m.find()){
 							String key = m.group(1);
 							String group = m.group(2);
 							if(key!=null&&group!=null){
 								token = group+":"+key; 
 							}
+							id = m.group(3);
 						}else{
 							m = ptrn_unlock.matcher(request);
 							if(m.find()){
 								String key = m.group(1);
 								token = key; 
+								id = m.group(2);
+							}
+						}
+						if(id!=null&&id.length()>0){
+							try{
+								lock_id = Long.parseLong(id);
+							}catch(Exception e){
 							}
 						}
 						
@@ -275,15 +307,23 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 						if(logger.isDebugEnabled())
 							logger.debug("attempt to unlock with token = " + token);
 						try{
-							LockExpiration expire = m_locks.remove(token);
+							LockExpiration expire = m_locks.get(token);
 							if(expire!=null){
-								expire.cancel();
-								if(logger.isDebugEnabled())
-									logger.debug("unlocked ("+expire.hashCode()+") with token = " + token);
+								if(expire.getId()==lock_id){
+									expire.cancel();
+									if(logger.isDebugEnabled())
+										logger.debug("unlocked ("+expire.getId()+") with token = " + token);
+								}else{
+									if(logger.isDebugEnabled())
+										logger.debug("unlock does not performed ("+expire.getId()+") with token = " + token);
+									
+								}
+								out.write( String.valueOf(expire.getId()).getBytes() );
 								//lock_expire_timer.purge();
 								expire = null;
+							}else{
+								out.write( String.valueOf(0).getBytes() );
 							}
-							out.write( RES_OK.getBytes() );
 						}catch(Exception e){
 							out.write( RES_ERROR.getBytes() );
 							logger.warn(e);

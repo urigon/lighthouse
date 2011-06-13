@@ -21,8 +21,8 @@ public class DebugClient extends LocalClient {
 	 * @param host
 	 * @throws UnknownHostException 
 	 */
-	public DebugClient(String ring_id,String name, Integer id, int weight,Map<String,Object> context) throws Exception {
-		super(ring_id,name,id,weight,context);
+	public DebugClient(String name, Integer id, int weight,Map<String,Object> context) throws Exception {
+		super(name,id,weight,context);
 		super.className = DebugClient.class.getSimpleName();
 		store = new ConcurrentHashMap<String,Object>();
 		try{
