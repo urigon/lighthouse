@@ -262,7 +262,8 @@ public class LightHouse implements KVS, InitializingBean, DisposableBean{
 			
 			//リモートロックの準備
 			if(this.configurations.isGlobal_lock_enable()){
-				lock_daemon = new GlobalLockServer(this.configurations.getGlobalLockLocalBindAddress(),this.configurations.getGlobal_lock_timeout_millis());
+				lock_daemon = new GlobalLockServer(this.configurations.getGlobalLockLocalBindAddress());
+				lock_daemon.setExipreTimeout(this.configurations.getGlobal_lock_timeout_millis());
 				try{
 					lock_daemon.startup();
 				}catch(java.net.BindException bind){
@@ -270,6 +271,9 @@ public class LightHouse implements KVS, InitializingBean, DisposableBean{
 				}
 				lock_client = new GlobalLockClientManager(this.configurations.getGlobalLockRemoteAddresses());
 				lock_client.startup();
+			}else{
+				lock_daemon = new GlobalLockServer();
+				lock_daemon.setExipreTimeout(this.configurations.getGlobal_lock_timeout_millis());
 			}
 			
         	m_status = STATUS_RUNNING;
@@ -1412,7 +1416,6 @@ public class LightHouse implements KVS, InitializingBean, DisposableBean{
     	 * Setting up runtime properties.
     	 */
     	client_manager = new ClientManager(this);
-    	configurations.setup();
 		rt_compression_header = LightHouse.COMPRESSION_HEADER_PREFIX+this.configurations.compression_type_i+META_DELIMITER;
     	CLASSLOADER = Thread.currentThread().getContextClassLoader();
 
@@ -1632,96 +1635,89 @@ public class LightHouse implements KVS, InitializingBean, DisposableBean{
 
 	@Override
 	public long lock(String key) throws Exception {
-		long token = Thread.currentThread().getId();
-		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			return lock_client.lock(token,key);
-		}
-		return token;
+		long id = Thread.currentThread().getId();
+		lock(id,key);
+		return id;
 	}
 
 	@Override
-	public void lock(long token,String key) throws Exception {
+	public void lock(long id,String key) throws Exception {
+		lock_daemon.lock(id, key);
 		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.lock(token,key);
+			lock_client.lock(id,key);
 		}
 	}
 
 	@Override
 	public long lock(String group, String key) throws Exception {
-		long token = Thread.currentThread().getId();
-		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			return lock_client.lock(token,group,key);
-		}
-		return token;
+		long id = Thread.currentThread().getId();
+		lock(id,group,key);
+		return id;
 	}
 	@Override
-	public void lock(long token,String group, String key) throws Exception {
+	public void lock(long id,String group, String key) throws Exception {
+		lock_daemon.lock(id,group, key);
 		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.lock(token,group,key);
+			lock_client.lock(id,group,key);
 		}
 	}
 
 	@Override
 	public long lockGroup(String group) throws Exception {
-		long token = Thread.currentThread().getId();
-		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			return lock_client.lock(token,group,null);
-		}
-		return token;
+		long id = Thread.currentThread().getId();
+		lockGroup(id,group);
+		return id;
 	}
 	
 	@Override
-	public void lockGroup(long token,String group) throws Exception {
+	public void lockGroup(long id,String group) throws Exception {
+		lock_daemon.lock(id,group, null);
 		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.lock(token,group,null);
+			lock_client.lock(id,group,null);
 		}
 	}
 	
 	@Override
 	public long unlock(String key) throws Exception {
-		long token = Thread.currentThread().getId();
-		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			return lock_client.unlock(token,key);
-		}
-		return token;
+		long id = Thread.currentThread().getId();
+		unlock(id,key);
+		return id;
 	}
 
 	@Override
-	public void unlock(long token,String key) throws Exception {
+	public void unlock(long id,String key) throws Exception {
 		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.unlock(token,key);
+			lock_client.unlock(id,key);
 		}
 	}
 
 	@Override
 	public long unlock(String group, String key) throws Exception {
-		long token = Thread.currentThread().getId();
-		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			return lock_client.unlock(token,group,key);
-		}
-		return token;
+		long id = Thread.currentThread().getId();
+		unlock(id,group,key);
+		return id;
 	}
 
 	@Override
-	public void unlock(long token,String group, String key) throws Exception {
+	public void unlock(long id,String group, String key) throws Exception {
+		lock_daemon.unlock(id,group, key);
 		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.unlock(token,group,key);
+			lock_client.unlock(id,group,key);
 		}
 	}
 
 	@Override
 	public long unlockGroup(String group) throws Exception {
-		long token = Thread.currentThread().getId();
-		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			return lock_client.unlock(token,group,null);
-		}
-		return token;
+		long id = Thread.currentThread().getId();
+		unlockGroup(id,group);
+		return id;
 	}
 	
 	@Override
-	public void unlockGroup(long token,String group) throws Exception {
+	public void unlockGroup(long id,String group) throws Exception {
+		lock_daemon.unlock(id, group,null);
 		if(this.configurations.isGlobal_lock_enable()&&lock_client!=null){
-			lock_client.unlock(token,group,null);
+			lock_client.unlock(id,group,null);
 		}
 	}
 

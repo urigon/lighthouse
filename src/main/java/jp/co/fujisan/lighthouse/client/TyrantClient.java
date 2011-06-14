@@ -27,6 +27,7 @@ public class TyrantClient extends KVSClient {
 	RDBConnectionPool rdb_conn_pool = null;
 
 	private boolean isStore_primitives_as_string = Configurations.CONFIG_DEFAULT_STORE_PRIMITIVES_AS_STRING;
+	private boolean isCheck_client_availability_strictly = Configurations.CONFIG_DEFAULT_CHECK_CLIENT_AVAILABILITY_STRICTLY;
 	
 	/**
 	 * @param name
@@ -40,13 +41,17 @@ public class TyrantClient extends KVSClient {
 		
 		logger = LogFactory.getLog(TyrantClient.class);
 		
+		try{
+			isStore_primitives_as_string = (Boolean)context.get(Configurations.CONFIG_KEY_STORE_PRIMITIVES_AS_STRING);
+		}catch(Exception ignore){}
+		try{
+			isCheck_client_availability_strictly = (Boolean)context.get(Configurations.CONFIG_KEY_CHECK_CLIENT_AVAILABILITY_STRICTLY);
+		}catch(Exception ignore){}
+		
 		conn_pool.clear();
 		rdb_conn_pool = new RDBConnectionPool(address);
 		conn_pool = rdb_conn_pool;
 		
-		try{
-			isStore_primitives_as_string = (Boolean)context.get(Configurations.CONFIG_KEY_STORE_PRIMITIVES_AS_STRING);
-		}catch(Exception ignore){}
 
 	}
 
@@ -58,8 +63,9 @@ public class TyrantClient extends KVSClient {
 
 	@Override
 	final public boolean delete(String key) throws Exception {
-		RDB rdb = rdb_conn_pool.getRDB();
+		RDB rdb = null; 
 		try{
+			rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 			return rdb.out(key);
 		}catch(Exception e){
 			onFail(e);
@@ -74,8 +80,9 @@ public class TyrantClient extends KVSClient {
 
 	@Override
 	final public Object get(String key) throws Exception {
-		RDB rdb = rdb_conn_pool.getRDB();
+		RDB rdb = null; 
 		try{
+			rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 			return rdb.get(key);
 		}catch(Exception e){
 			onFail(e);
@@ -90,8 +97,9 @@ public class TyrantClient extends KVSClient {
 
 	@Override
 	final public Map get(String[] keys) throws Exception {
-		RDB rdb = rdb_conn_pool.getRDB();
+		RDB rdb = null; 
 		try{
+			rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 			return rdb.mget(keys);
 		}catch(Exception e){
 			onFail(e);
@@ -106,9 +114,10 @@ public class TyrantClient extends KVSClient {
 
 	@Override
 	final public Set<String> keys() throws Exception {
-		RDB rdb = rdb_conn_pool.getRDB();
 		Set<String> result = new HashSet<String>();
+		RDB rdb = null; 
 		try{
+			rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 			Object[] keys = rdb.fwmkeys("", -1);
 			if(keys!=null){
 				for(int i=0;i<keys.length;i++){
@@ -133,8 +142,9 @@ public class TyrantClient extends KVSClient {
 	@Override
 	final public Set<String> keys(String prefix) throws Exception {
 		Set<String> result = new HashSet<String>();
-		RDB rdb = rdb_conn_pool.getRDB();
+		RDB rdb = null; 
 		try{
+			rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 			Object[] keys = rdb.fwmkeys(prefix, -1);
 			if(keys!=null){
 				for(int i=0;i<keys.length;i++){
@@ -158,8 +168,9 @@ public class TyrantClient extends KVSClient {
 
 	@Override
 	final public boolean set(String key, Object value) throws Exception {
-		RDB rdb = rdb_conn_pool.getRDB();
+		RDB rdb = null; 
 		try{
+			rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 			if(!isStore_primitives_as_string){
 				return rdb.put(key, value,getTransCoder(value));
 			}else{
@@ -179,8 +190,9 @@ public class TyrantClient extends KVSClient {
 	
 	@Override
 	final public boolean clear() throws Exception {
-		RDB rdb = rdb_conn_pool.getRDB();
+		RDB rdb = null; 
 		try{
+			rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 			return rdb.vanish();
 		}catch(Exception e){
 			if(!isAvailable)
@@ -196,7 +208,7 @@ public class TyrantClient extends KVSClient {
 
 	@Override
 	final public int size() throws Exception {
-		RDB rdb = rdb_conn_pool.getRDB();
+		RDB rdb = rdb_conn_pool.getRDB(isCheck_client_availability_strictly);
 		try{
 			return (int) rdb.rnum();
 		}catch(Exception e){
@@ -251,12 +263,12 @@ public class TyrantClient extends KVSClient {
 			
 			if(this.address!=null){
 				for(int i=0;i<KVSClient.POOL_INIT_SIZE;i++){
-					createRDB();
+					createRDB(isCheck_client_availability_strictly);
 				}
 			}
 		}
 		
-		private synchronized void createRDB()throws Exception{
+		private synchronized void createRDB(boolean checkConnectionAvailability)throws Exception{
 			
 			RDB rdb = new RDB();
 			if(isSanitize_keys){
@@ -266,6 +278,12 @@ public class TyrantClient extends KVSClient {
 				rdb.setValueTranscoder(new StringTranscoder(sanitize_encoding));
 			}
 			rdb.open(address);
+			if(checkConnectionAvailability){
+				long size = rdb.size();
+				if(logger.isDebugEnabled()){
+					logger.debug("RDBConnectionPool.createRDB("+Thread.currentThread().getId()+") = "+size);
+				}
+			}
 			Integer hash_code = rdb.hashCode();			
 			if(m_queue.offer(hash_code)){
 				m_cache.put(hash_code, rdb);
@@ -273,7 +291,7 @@ public class TyrantClient extends KVSClient {
 			}
 		}
 		
-		public RDB getRDB(){
+		public RDB getRDB(boolean checkConnectionAvailability){
 			try{
 				if(m_queue==null)
 					throw new Exception("RDBConnectionPool is already finalized.");
@@ -281,14 +299,13 @@ public class TyrantClient extends KVSClient {
 				if(id==null){
 					if(m_cache.size()<KVSClient.POOL_MAX_SIZE)
 					{
-						createRDB();
+						createRDB(checkConnectionAvailability);
 					}else{
 						synchronized(this){
 							wait();
-							logger.debug("RDBConnectionPool.getRDB("+Thread.currentThread().getId()+") awake!");
 						}
 					}
-					return getRDB();
+					return getRDB(checkConnectionAvailability);
 				}
 				return (RDB)m_cache.get(id);
 				
@@ -321,9 +338,6 @@ public class TyrantClient extends KVSClient {
 					RDB rdb = (RDB)m_cache.remove(id);						
 					rdb.close();
 					notify();
-					if(logger.isDebugEnabled()){
-						logger.debug("RDBConnectionPool.getRDB("+Thread.currentThread().getId()+") notify!");
-					}
 				}catch(Exception ignore){
 					if(logger.isDebugEnabled()){
 						logger.debug(ignore);

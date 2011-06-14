@@ -26,7 +26,7 @@ public abstract class KVSClient extends LocalClient {
 	protected InetSocketAddress address;
 	
 	
-	private Map<Integer,Integer> m_failure_count = new ConcurrentHashMap<Integer,Integer>();
+	private static Map<Integer,Integer> m_failure_count = new ConcurrentHashMap<Integer,Integer>();
     
 	/*
 	 * Connection pool
@@ -161,20 +161,13 @@ public abstract class KVSClient extends LocalClient {
 				
 				 InetSocketAddress address = new InetSocketAddress(this.address.getAddress(),this.address.getPort());
                  Socket s = new Socket(address.getAddress(),address.getPort());
-                 if(logger.isDebugEnabled()){
-	                 logger.debug("Checking host_socket(" + address.getAddress()+ ":" + address.getPort()+")");
-                 }
                  s.close();
  				isAvailable = true;
-				return true;
 				
              }catch (Exception ex) {
                  // The remote host is not listening on this port
-            	 logger.debug("<Error>\r\n",ex);
+     			this.onFail(new SocketException("No longer available host_socket(" + this.address==null?"null":this.address.getAddress()+ ":" + this.address==null?"null":this.address.getPort()+")"));
               }
-			
-			isAvailable = false;
-			this.onFail(new SocketException("No longer available host_socket(" + this.address==null?"null":this.address.getAddress()+ ":" + this.address==null?"null":this.address.getPort()+")"));
 			
 		}
 		
@@ -240,6 +233,8 @@ public abstract class KVSClient extends LocalClient {
 	 */
 	protected void onFail(Exception e){
 
+		logger.error(e);
+		
 		//一定回数以内の失敗であれば無視
 		Integer failureCount = m_failure_count.get(this.getId());
 		if(failureCount==null){
@@ -253,8 +248,6 @@ public abstract class KVSClient extends LocalClient {
 		}
 		
 		this.isAvailable = false;
-		
-		logger.debug("<Error>\r\n",e);
 		
 		try{
 			

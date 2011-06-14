@@ -5,7 +5,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.PrintWriter;
 import java.io.Serializable;
 import java.net.BindException;
 import java.net.InetSocketAddress;
@@ -19,8 +18,6 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import jp.co.fujisan.lighthouse.queue.KVQueueLockingImpl;
-import jp.co.fujisan.lighthouse.queue.LockingConcurrentHashMap;
 import jp.co.fujisan.lighthouse.queue.exception.LockFailureException;
 import jp.co.fujisan.lighthouse.queue.exception.LockTimeoutException;
 
@@ -86,12 +83,10 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 
 	}
 	
-	public GlobalLockServer(InetSocketAddress endpoint,long lock_timeout_millis) throws IOException{
+	public GlobalLockServer(InetSocketAddress endpoint) throws IOException{
 		setHost(endpoint.getHostName());
 		setPort(endpoint.getPort());
 		lock_expire_timer = new Timer("LockExpirationTimer");
-		
-		this.exipreTimeout = lock_timeout_millis;
 	}
 	
 	public void startup() throws IOException,BindException{
@@ -103,11 +98,11 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 	
 	@Override
 	public void destroy() throws Exception {
-		if(m_server_thread!=null){
-			m_server_thread.exit();
-		}
 		if(m_executor_service!=null){
 			m_executor_service.shutdownNow();
+		}
+		if(m_server_thread!=null){
+			m_server_thread.exit();
 		}
 		if(lock_expire_timer!=null){
 			lock_expire_timer.cancel();
@@ -120,6 +115,75 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 	public void afterPropertiesSet() throws Exception {
 		// TODO Auto-generated method stub
 		
+	}
+	
+	public long lock(long lock_id,String group,String key)throws LockTimeoutException,LockFailureException{
+		if(key!=null&&group!=null){
+			key = group+":"+key; 
+		}
+		return lock(lock_id,key);
+	}
+	
+	public long lock(long lock_id,String key)throws LockTimeoutException,LockFailureException{
+		if(logger.isDebugEnabled())
+			logger.debug("attempt to lock("+lock_id+"):" + key);
+		try{
+			long remains_to_timeout = requestTimeout;
+			while(remains_to_timeout>0){
+				LockExpiration expire = null;
+				synchronized(m_locks){
+					if(!m_locks.containsKey(key)){
+						expire = new LockExpiration(lock_id,key);
+						m_locks.put(key,expire );
+						lock_expire_timer.schedule(expire, exipreTimeout);
+						if(logger.isDebugEnabled())
+							logger.debug("locked ("+expire.getId()+"):"+key+" " + expire.scheduledExecutionTime()+"ms");
+						return expire.getId();
+					}
+				}
+				Thread.sleep(10);
+				remains_to_timeout-=10;
+			}
+		}catch(Exception e){
+			throw new LockFailureException(e.getMessage());
+		}
+		throw new LockTimeoutException("Request timed out "+requestTimeout+"ms.");
+	}
+	
+	public long unlock(long lock_id,String group,String key)throws LockFailureException{
+		if(key!=null&&group!=null){
+			key = group+":"+key; 
+		}
+		return unlock(lock_id,key);
+	}
+	
+	public long unlock(long lock_id,String key)throws LockFailureException{
+		if(logger.isDebugEnabled())
+			logger.debug("attempt to unlock("+lock_id+"):" + key);
+		try{
+			LockExpiration expire = m_locks.get(key);
+			if(expire!=null){
+				if(expire.getId()==lock_id){
+					expire.cancel();
+					if(logger.isDebugEnabled())
+						logger.debug("unlocked ("+expire.getId()+"):" + key);
+				}else{
+					if(logger.isDebugEnabled())
+						logger.debug("still locking ("+expire.getId()+") :" + key);
+				}
+				long unlocked_id = expire.getId();
+				//lock_expire_timer.purge();
+				expire = null;
+				return unlocked_id;
+			}else{
+				if(logger.isDebugEnabled())
+					logger.debug("already unlocked :" + key);
+			}
+		}catch(Exception e){
+			throw new LockFailureException(e.getMessage());
+		}
+		throw new LockFailureException("already unlocked");
+
 	}
 	
 	private class ServerThread extends Thread{
@@ -196,7 +260,7 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 			OutputStream out = null;
 			try {
 				if(logger.isDebugEnabled())
-					logger.debug("connected from "+ socket.getRemoteSocketAddress() );					
+					logger.debug("request from "+ socket.getRemoteSocketAddress() );					
 				
 				out = new BufferedOutputStream( socket.getOutputStream());
 				
@@ -207,24 +271,27 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 					
 					if(logger.isDebugEnabled())
 						logger.debug("request [ " + request+" ]");
-					String token = null;
+					String entry_key = null;
 					
 					long lock_id = 0;
 					if(request.startsWith(CMD_LOCK)){
+						/*
+						 * LOCK
+						 */
 						Matcher m = ptrn_lock_group.matcher(request);
 						String id = null;
 						if(m.find()){
 							String key = m.group(1);
 							String group = m.group(2);
 							if(key!=null&&group!=null){
-								token = group+":"+key; 
+								entry_key = group+":"+key; 
 							}
 							id = m.group(3);
 						}else{
 							m = ptrn_lock.matcher(request);
 							if(m.find()){
 								String key = m.group(1);
-								token = key; 
+								entry_key = key; 
 								id = m.group(2);
 							}
 						}
@@ -236,61 +303,34 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 							}
 						}
 						
-						/*
-						 * LOCK
-						 */
-						if(logger.isDebugEnabled())
-							logger.debug("attempt to lock with token = " + token);
 						try{
-							long remains_to_timeout = requestTimeout;
-							while(remains_to_timeout>0){
-								synchronized(this){
-									LockExpiration expire = null;
-									synchronized(m_locks){
-										if(!m_locks.containsKey(token)){
-											expire = new LockExpiration(lock_id,token);
-											m_locks.put(token,expire );
-										}
-									}
-									if(expire!=null){
-										lock_expire_timer.schedule(expire, exipreTimeout);
-										if(logger.isDebugEnabled())
-											logger.debug("locked ("+expire.getId()+"):"+expire.scheduledExecutionTime()+"ms with token = " + token);
-										out.write( String.valueOf(expire.getId()).getBytes() );
-										return;
-									}else{
-										sleep(10);
-										remains_to_timeout-=10;
-									}
-								}
-							}
-							
-							if(remains_to_timeout!=requestTimeout){
-								if(logger.isDebugEnabled())
-									logger.debug("lock timedout with token = " + token);
-								out.write( RES_TIME_OUT.getBytes() );
-							}
-							
+							out.write( String.valueOf(lock(lock_id,entry_key)).getBytes());
+						}catch(LockTimeoutException e){
+							out.write( RES_TIME_OUT.getBytes() );
 						}catch(Exception e){
 							out.write( RES_ERROR.getBytes() );
 							logger.warn(e);
 						}
 						
 					}else if(request.startsWith(CMD_UNLOCK)){
+						/*
+						 * UNLOCK
+						 */
+
 						Matcher m = ptrn_unlock_group.matcher(request);
 						String id = null;
 						if(m.find()){
 							String key = m.group(1);
 							String group = m.group(2);
 							if(key!=null&&group!=null){
-								token = group+":"+key; 
+								entry_key = group+":"+key; 
 							}
 							id = m.group(3);
 						}else{
 							m = ptrn_unlock.matcher(request);
 							if(m.find()){
 								String key = m.group(1);
-								token = key; 
+								entry_key = key; 
 								id = m.group(2);
 							}
 						}
@@ -301,29 +341,8 @@ public class GlobalLockServer implements Serializable, InitializingBean, Disposa
 							}
 						}
 						
-						/*
-						 * UNLOCK
-						 */
-						if(logger.isDebugEnabled())
-							logger.debug("attempt to unlock with token = " + token);
 						try{
-							LockExpiration expire = m_locks.get(token);
-							if(expire!=null){
-								if(expire.getId()==lock_id){
-									expire.cancel();
-									if(logger.isDebugEnabled())
-										logger.debug("unlocked ("+expire.getId()+") with token = " + token);
-								}else{
-									if(logger.isDebugEnabled())
-										logger.debug("unlock does not performed ("+expire.getId()+") with token = " + token);
-									
-								}
-								out.write( String.valueOf(expire.getId()).getBytes() );
-								//lock_expire_timer.purge();
-								expire = null;
-							}else{
-								out.write( String.valueOf(0).getBytes() );
-							}
+							out.write( String.valueOf(unlock(lock_id,entry_key)).getBytes());
 						}catch(Exception e){
 							out.write( RES_ERROR.getBytes() );
 							logger.warn(e);

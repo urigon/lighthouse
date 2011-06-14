@@ -21,7 +21,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 
-public class Configurations implements Serializable{
+public class Configurations implements Serializable,InitializingBean, DisposableBean{
 
 	private static final Log logger = LogFactory.getLog(Configurations.class);
 
@@ -205,8 +205,18 @@ public class Configurations implements Serializable{
 	 *ファイルに書き込み
 	 * @throws ConfigurationException
 	 */
-	public void save() throws Exception{
+	public void save() throws ConfigurationException{
+		if(configuration_path==null||configuration_path.length()==0||storage_path==null||storage_path.length()==0){
+			throw new ConfigurationException("Both of properties configuration_path and storage_path are required.");
+		}
+
+		if(m_configuration==null){
+			m_configuration = new PropertiesConfiguration(configuration_path);
+		}
 		m_configuration.save();
+		if(m_storage_configuration==null){
+			m_storage_configuration = new XMLConfiguration(storage_path);
+		}
 		m_storage_configuration.save();
 	}
 	
@@ -215,7 +225,7 @@ public class Configurations implements Serializable{
 	 * @throws ConfigurationException
 	 * @throws StatusException 
 	 */
-	protected void setup() throws ConfigurationException, StatusException{
+	protected void load() throws ConfigurationException, StatusException{
 		
 			try {
 				m_configuration = new PropertiesConfiguration(configuration_path);
@@ -762,5 +772,17 @@ public class Configurations implements Serializable{
 	private LightHouse lighthouse = null;
 	protected void setLightHouse(LightHouse lighthouse){
 		this.lighthouse = lighthouse;
+	}
+
+	@Override
+	public void destroy() throws Exception {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		save();
+		load();
 	}
 }
