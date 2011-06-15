@@ -11,7 +11,7 @@ http://www.springframework.org/schema/tx http://www.springframework.org/schema/t
   <bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
     <property name="locations">
       <list>
-        <value>file:/home/development/workspace/lighthouse/src/test/resources/testcase.properties</value>
+        <value>file:./src/test/resources/testcase.properties</value>
       </list>
     </property>
   </bean>
