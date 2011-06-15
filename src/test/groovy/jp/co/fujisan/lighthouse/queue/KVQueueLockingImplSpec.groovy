@@ -43,128 +43,102 @@ class KVQueueLockingImplSpec extends Specification {
     def "enqueue は指定された item の command が CANCEL の場合、"(){
         setup:
         def key = "key1"
-        
-        when: "removeを呼び出し"
-        def removeCalled = false
-        def out_item_mock = mock(QueueItem)
-        out_item_mock.unlock()
-        
-        def item = new QueueItem(QueueItem.CMD_CANCEL, key)
-        def in_item_mock = mock(item)
-        in_item_mock.unlock()
-        /*
-         * KVQueueLockingImpl queue = new KVQueueLockingImpl()
-         * queue.metaClass.remove = {String key2 -> ... }
-         * 上記の方法ではうまくmetaClassで定義したメソッドが実行されないので以下の方法で
-         * Overrideする
-         */
-        KVQueueLockingImpl queue = new KVQueueLockingImpl() {
-            public QueueItem remove(String key2) throws AlreadyFinalizedException{
-                if(key2 == key){
-                    removeCalled = true
-                }
-                return out_item_mock
-            }
-        }
-        
-        def result = null
+        def value = "value1"
+		KVQueueLockingImpl queue = new KVQueueLockingImpl()
+		
+        when: "該当するインキュー（デキューもコミットもされていない）のキャッシュの情報を"
+		QueueItem prev_item = new QueueItem(QueueItem.CMD_SET,key,value);
+		queue.enqueue(prev_item)
+		
+		and:"あとからCANCELコマンドでremoveされる"
+		QueueItem suc_item = new QueueItem(QueueItem.CMD_CANCEL,key);
+
+        def canceled = null
         play{
-            result = queue.enqueue(in_item_mock)
+            canceled = queue.enqueue(suc_item)
         }
         
-        then: "inputとoutputのitemのロックを解除し戻り値を返還する"
-        removeCalled
-        result == out_item_mock
+        then: "itemのロックを解除し戻り値を返還する"
+        canceled == prev_item
+		null == queue.remove(key)
+
     }
     
     def "enqueue は指定された item の command が GET の場合、"(){
         setup:
         KVQueueLockingImpl queue = new KVQueueLockingImpl()
         def key = "key1"
+		def value = "value1"
+		
+        when: "該当するインキュー（デキューもコミットもされていない）のキャッシュの情報を"
+		QueueItem prev_item = new QueueItem(QueueItem.CMD_SET,key,value);
+		queue.enqueue(prev_item)
         
-        when: "該当するキャッシュの情報を取得し"
-        def out_item_mock = mock(QueueItem)
-        out_item_mock.unlock()
+		and:"あとからGETコマンドで取り出せる"
+		QueueItem suc_item = new QueueItem(QueueItem.CMD_GET,key);
         
-        def item = new QueueItem(QueueItem.CMD_GET, key)
-        def in_item_mock = mock(item)
-        in_item_mock.unlock()
-        
-        def m_cache_mock = mock(LockingConcurrentHashMap)
-        m_cache_mock.get(key).returns(out_item_mock)
-        
-        queue.m_cache = m_cache_mock
         def result = null
         play{
-            result = queue.enqueue(in_item_mock)
+            result = queue.enqueue(suc_item)
         }
         
-        then: "inputとoutputのitemのロックを解除し戻り値を返還する"
-        result == out_item_mock
+        then: "itemのロックを解除せずに戻り値を返還する先のSETコマンドは継続してインキューされている"
+        result.value == prev_item.value
+		queue.m_queue.contains(key)
+		QueueItem.CMD_SET == queue.m_cache.get(key).command
+		prev_item.value == queue.m_cache.get(key).value
+		
     }
     
     def "enqueue は指定された item の command が SET の場合、"(){
         setup:
         KVQueueLockingImpl queue = new KVQueueLockingImpl()
         def key = "key1"
+		def value = "value1"
+		def value2 = "value2"
+		
+        when: "該当するインキュー（デキューもコミットもされていない）のキャッシュの情報を"
+		QueueItem prev_item = new QueueItem(QueueItem.CMD_SET,key,value);
+		queue.enqueue(prev_item)
         
-        when: "与えられた情報をキャッシュに書き込み"
-        def out_item_mock = mock(QueueItem)
-        out_item_mock.unlock()
-        
-        def item = new QueueItem(QueueItem.CMD_SET, key)
-        def in_item_mock = mock(item)
-        in_item_mock.unlock()
-        
-        def m_cache_mock = mock(LockingConcurrentHashMap)
-        m_cache_mock.put(key, in_item_mock, LockingConcurrentHashMap.LOCK_WRITE).returns(out_item_mock)
-        queue.m_cache = m_cache_mock
-        
-        and: "キューに指定するKeyが存在しない場合はキューに書き込み"
-        def m_queue_mock = mock(RamdomAccessRemovalConcurrentLinkedQueue)
-        m_queue_mock.contains(key).returns(false)
-        m_queue_mock.offer(key).returns(true)
-        queue.m_queue = m_queue_mock
+		and:"あとからSETコマンドで上書きされる"
+		QueueItem suc_item = new QueueItem(QueueItem.CMD_SET,key,value2);
         
         def result = null
         play{
-            result = queue.enqueue(in_item_mock)
+            result = queue.enqueue(suc_item)
         }
         
-        then: "inputとoutputのitemのロックを解除し戻り値を返還する"
-        result == out_item_mock
+        then: "itemのロックを解除して戻り値を返還するかつあとのSETコマンドがエンキューされる"
+        result.value == prev_item.value
+		queue.m_queue.contains(key)
+		QueueItem.CMD_SET == queue.m_cache.get(key).command
+		suc_item.value == queue.m_cache.get(key).value
+		
     }
     
     def "enqueue は指定された item の command が DELETE の場合、"(){
         setup:
-        KVQueueLockingImpl queue = new KVQueueLockingImpl()
         def key = "key1"
-        
-        when: "与えられた情報をキャッシュとキューに書き込み"
-        def out_item_mock = mock(QueueItem)
-        out_item_mock.unlock()
-        
-        def item = new QueueItem(QueueItem.CMD_DELETE, key)
-        def in_item_mock = mock(item)
-        in_item_mock.unlock()
-        
-        def m_cache_mock = mock(LockingConcurrentHashMap)
-        m_cache_mock.put(key, in_item_mock, LockingConcurrentHashMap.LOCK_WRITE).returns(out_item_mock)
-        queue.m_cache = m_cache_mock
-        
-        and: "キューに指定するKeyが存在する場合はキューに書きこまず"
-        def m_queue_mock = mock(RamdomAccessRemovalConcurrentLinkedQueue)
-        m_queue_mock.contains(key).returns(true)
-        m_queue_mock.offer(key).never()
-        queue.m_queue = m_queue_mock
-        
-        def result = null
+        def value = "value1"
+		KVQueueLockingImpl queue = new KVQueueLockingImpl()
+		
+        when: "該当するインキュー（デキューもコミットもされていない）のキャッシュの情報を"
+		QueueItem prev_item = new QueueItem(QueueItem.CMD_SET,key,value);
+		queue.enqueue(prev_item)
+		
+		and:"あとからDELETEコマンドでremoveされる"
+		QueueItem suc_item = new QueueItem(QueueItem.CMD_DELETE,key);
+
+        def deleted = null
         play{
-            result = queue.enqueue(in_item_mock)
+            deleted = queue.enqueue(suc_item)
         }
         
-        then: "inputとoutputのitemのロックを解除し戻り値を返還する"
-        result == out_item_mock
+        then: "itemのロックを解除し戻り値を返還しDELETEコマンドをエンキューする"
+        deleted == prev_item
+		queue.m_queue.contains(key)
+		QueueItem.CMD_DELETE == queue.m_cache.get(key).command
     }
     
     def "dequeue は 有効でなければAlreadyFinalizedExceptionを投げる"(){
